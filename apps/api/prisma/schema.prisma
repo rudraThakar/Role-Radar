@@ -1,0 +1,236 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProfileDomain {
+  SOFTWARE
+  DIGITAL_HARDWARE
+  EMBEDDED
+  DATA_ML
+  RESEARCH
+}
+
+enum WorkMode {
+  ONSITE
+  HYBRID
+  REMOTE
+  UNKNOWN
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERNSHIP
+  UNKNOWN
+}
+
+enum Seniority {
+  FRESHER
+  ENTRY_LEVEL
+  MID_LEVEL
+  SENIOR
+  UNKNOWN
+}
+
+enum JobState {
+  SAVED
+  HIDDEN
+  VIEWED
+  APPLIED
+}
+
+enum ApplicationStage {
+  APPLIED
+  INTERVIEWING
+  OFFER
+  REJECTED
+  WITHDRAWN
+}
+
+enum ResumeExtractionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+model User {
+  id           String          @id @default(uuid())
+  email        String          @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  profiles     CareerProfile[]
+  jobStates    UserJobState[]
+  companyWatches CompanyWatch[]
+  refreshSessions RefreshSession[]
+  notifications  UserNotification[]
+
+  @@index([createdAt])
+}
+
+model RefreshSession {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Job {
+  id                      String           @id @default(uuid())
+  companyName             String
+  title                   String
+  normalizedTitle         String
+  description             String
+  employmentType          EmploymentType
+  seniority               Seniority
+  domains                 ProfileDomain[]
+  skills                  String[]
+  minimumExperienceMonths Int?
+  maximumExperienceMonths Int?
+  eligibleGraduationYears Int[]
+  locations               String[]
+  workMode                WorkMode
+  salaryMin               Int?
+  salaryMax               Int?
+  salaryCurrency          String?
+  sourceUrl               String
+  applyUrl                String
+  publishedAt             DateTime?
+  discoveredAt            DateTime         @default(now())
+  expiresAt               DateTime?
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
+  userStates              UserJobState[]
+
+  @@unique([sourceUrl])
+  @@index([companyName])
+  @@index([discoveredAt])
+  @@index([employmentType])
+  @@index([seniority])
+  @@index([workMode])
+}
+
+model CareerProfile {
+  id                   String           @id @default(uuid())
+  userId               String?
+  name                 String
+  domain               ProfileDomain
+  graduationYear       Int?
+  experienceMonths     Int
+  preferredRoles       String[]
+  preferredLocations   String[]
+  preferredWorkModes   WorkMode[]
+  citizenshipCountry  String           @default("India")
+  includeInternationalRoles Boolean     @default(false)
+  minimumSalary        Int?
+  salaryCurrency       String?
+  targetCompanies      String[]
+  excludedCompanies    String[]
+  includedKeywords     String[]
+  excludedKeywords     String[]
+  skills               String[]
+  seeksEmploymentTypes EmploymentType[]
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  user                 User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobStates            UserJobState[]
+  resumes              Resume[]
+  companyWatches       CompanyWatch[]
+  notifications        UserNotification[]
+
+  @@index([userId])
+  @@index([domain])
+  @@index([createdAt])
+}
+
+model UserNotification {
+  id        String   @id @default(uuid())
+  userId    String
+  profileId String
+  type      String
+  message   String
+  jobCount  Int      @default(0)
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile   CareerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([profileId, createdAt])
+  @@index([readAt])
+}
+
+model CompanyWatch {
+  id               String        @id @default(uuid())
+  userId           String
+  profileId        String
+  companyName      String
+  careersUrl       String
+  websiteUrl       String?
+  checkCadenceDays Int           @default(1)
+  lastCheckedAt    DateTime?
+  isActive         Boolean       @default(true)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile          CareerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, profileId, careersUrl])
+  @@index([userId, profileId])
+  @@index([isActive])
+  @@index([lastCheckedAt])
+}
+
+model Resume {
+  id               String                 @id @default(uuid())
+  profileId        String
+  originalFilename String
+  mimeType         String
+  sizeBytes        Int
+  storageKey       String?
+  checksumSha256   String?
+  extractedText    String?
+  extractionError  String?
+  extractionStatus ResumeExtractionStatus @default(PENDING)
+  isActive         Boolean                @default(false)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  profile          CareerProfile          @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+  @@index([isActive])
+}
+
+model UserJobState {
+  id               String            @id @default(uuid())
+  userId           String
+  profileId        String
+  jobId            String
+  state            JobState
+  applicationStage ApplicationStage?
+  applicationNotes String?
+  appliedAt        DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile          CareerProfile     @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  job              Job               @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, profileId, jobId])
+  @@index([userId, profileId])
+  @@index([jobId])
+  @@index([state])
+}
