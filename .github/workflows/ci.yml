@@ -58,8 +58,11 @@ jobs:
       - name: Apply migrations to clean Postgres
         run: npm --workspace @roleradar/api run db:deploy
 
+      - name: Build shared packages
+        run: npm run build:packages
+
       - name: Type check
-        run: npm run check
+        run: npm run check --workspaces --if-present
 
       - name: Build
         run: npm run build
