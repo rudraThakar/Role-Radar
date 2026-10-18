@@ -1,0 +1,37 @@
+name: Check watched company portals
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-watches:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      SUPABASE_RESUME_BUCKET: ${{ secrets.SUPABASE_RESUME_BUCKET }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm --workspace @roleradar/api run db:generate
+
+      - name: Build API
+        run: npm --workspace @roleradar/api run build
+
+      - name: Check watched portals
+        run: npm --workspace @roleradar/api run check:watches
