@@ -120,4 +120,47 @@ describe("profile discovery service", () => {
     assert.equal(summary.sources[0]?.failed, true);
     assert.equal(summary.sources[1]?.stored, 1);
   });
+
+  it("checks sources concurrently without exceeding the connector limit", async () => {
+    const profileRepository = new InMemoryProfileRepository();
+    const jobRepository = new InMemoryJobRepository();
+    const userId = "user_1";
+    const profile = await profileRepository.create(userId, {
+      name: "Backend SDE",
+      domain: "SOFTWARE",
+      experienceMonths: 0,
+      preferredRoles: ["Backend Engineer"],
+      preferredLocations: ["Remote"],
+      preferredWorkModes: ["REMOTE"],
+      targetCompanies: [],
+      excludedCompanies: [],
+      includedKeywords: [],
+      excludedKeywords: [],
+      skills: ["Node.js"],
+      seeksEmploymentTypes: ["FULL_TIME"]
+    });
+    const sources = Array.from({ length: 6 }, (_, index): DiscoverySource => ({
+      ...source,
+      id: `source-${index}`,
+      companyName: `Company ${index}`
+    }));
+    let activeRequests = 0;
+    let maximumActiveRequests = 0;
+    const fetcher: CareerPageFetcher = {
+      async fetchJobs() {
+        activeRequests += 1;
+        maximumActiveRequests = Math.max(maximumActiveRequests, activeRequests);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        activeRequests -= 1;
+        return [];
+      }
+    };
+    const service = new ProfileDiscoveryService(profileRepository, jobRepository, fetcher, sources);
+
+    const summary = await service.discoverForProfile(userId, profile.id);
+
+    assert.equal(summary.checked, 6);
+    assert.equal(maximumActiveRequests, 4);
+    assert.deepEqual(summary.sources.map((result) => result.sourceId), sources.map((candidate) => candidate.id));
+  });
 });

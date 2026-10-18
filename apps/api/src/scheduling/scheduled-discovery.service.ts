@@ -1,13 +1,17 @@
 import type { NotificationRepository } from "../notifications/notification.repository.js";
 import type { ProfileRepository } from "../profiles/profile.repository.js";
 import type { ProfileDiscoveryService } from "../discovery/profile-discovery.service.js";
+import type { JobRepository } from "../jobs/job.repository.js";
 import type { WatchCheckerService } from "../watch-checker/watch-checker.service.js";
+
+const staleJobWindowMs = 30 * 24 * 60 * 60 * 1000;
 
 export interface ScheduledDiscoverySummary {
   profilesChecked: number;
   created: number;
   updated: number;
   failed: number;
+  expired: number;
   notificationsCreated: number;
 }
 
@@ -16,7 +20,8 @@ export class ScheduledDiscoveryService {
     private readonly profileRepository: ProfileRepository,
     private readonly watchCheckerService: WatchCheckerService,
     private readonly profileDiscoveryService: ProfileDiscoveryService,
-    private readonly notificationRepository: NotificationRepository
+    private readonly notificationRepository: NotificationRepository,
+    private readonly jobRepository: JobRepository
   ) {}
 
   async run(now = new Date()): Promise<ScheduledDiscoverySummary> {
@@ -25,6 +30,7 @@ export class ScheduledDiscoveryService {
       created: 0,
       updated: 0,
       failed: 0,
+      expired: 0,
       notificationsCreated: 0
     };
 
@@ -50,6 +56,8 @@ export class ScheduledDiscoveryService {
         summary.notificationsCreated += 1;
       }
     }
+
+    summary.expired = await this.jobRepository.expireStale(new Date(now.getTime() - staleJobWindowMs), now);
 
     return summary;
   }

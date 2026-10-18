@@ -94,10 +94,17 @@ export class WatchCheckerService {
           }
         }
 
-        await this.companyWatchRepository.markChecked(watch.userId, watch.profileId, watch.id, now);
+        await this.companyWatchRepository.markSucceeded(watch.userId, watch.profileId, watch.id, now);
         summary.checked += 1;
       } catch (error) {
         summary.failed += 1;
+        await this.companyWatchRepository.markFailed(
+          watch.userId,
+          watch.profileId,
+          watch.id,
+          now,
+          error instanceof Error ? error.message : "Unknown connector failure"
+        );
         console.error(`Failed to check ${watch.companyName}:`, error);
       }
     }

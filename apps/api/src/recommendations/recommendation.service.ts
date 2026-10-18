@@ -1,7 +1,7 @@
 import {
   buildRecommendation,
   normalizeText,
-  tokenOverlapScore,
+  roleTitleMatchScore,
   type CanonicalJob,
   type CareerProfile,
   type RecommendationExplanation
@@ -69,6 +69,6 @@ export function isStrictProfileMatch(job: CanonicalJob, profile: CareerProfile):
   const jobRoleText = normalizeText(`${job.title} ${job.normalizedTitle}`);
   return profile.preferredRoles.some((role) => {
     const normalizedRole = normalizeText(role);
-    return jobRoleText.includes(normalizedRole) || tokenOverlapScore(jobRoleText, normalizedRole) >= 0.35;
+    return jobRoleText.includes(normalizedRole) || roleTitleMatchScore(jobRoleText, normalizedRole) >= 0.6;
   });
 }

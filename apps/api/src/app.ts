@@ -35,7 +35,8 @@ import { ScheduledDiscoveryService } from "./scheduling/scheduled-discovery.serv
 import { createCorsMiddleware } from "./shared/cors.js";
 import { errorHandler } from "./shared/error-handler.js";
 import { prisma } from "./shared/prisma.js";
-import { PlatformCareerPageFetcher } from "./watch-checker/career-page-fetcher.js";
+import { securityHeaders } from "./shared/security-headers.js";
+import { PlatformCareerPageFetcher, type CareerPageFetcher } from "./watch-checker/career-page-fetcher.js";
 import { WatchCheckerService } from "./watch-checker/watch-checker.service.js";
 
 export interface AppDependencies {
@@ -48,6 +49,8 @@ export interface AppDependencies {
   refreshSessionRepository?: RefreshSessionRepository;
   notificationRepository?: NotificationRepository;
   userRepository?: UserRepository;
+  careerPageFetcher?: CareerPageFetcher;
+  readinessCheck?: () => Promise<void>;
   jwtSecret?: string;
 }
 
@@ -62,6 +65,8 @@ export function createApp(dependencies: AppDependencies = {}): Express {
   const profileRepository = dependencies.profileRepository ?? new PrismaProfileRepository(prisma);
   const resumeRepository = dependencies.resumeRepository ?? new PrismaResumeRepository(prisma);
   const resumeFileStorage = dependencies.resumeFileStorage ?? createResumeFileStorageFromEnv();
+  const careerPageFetcher = dependencies.careerPageFetcher ?? new PlatformCareerPageFetcher();
+  const readinessCheck = dependencies.readinessCheck ?? checkDatabaseReadiness;
   const authService = new AuthService(
     userRepository,
     refreshSessionRepository,
@@ -73,14 +78,14 @@ export function createApp(dependencies: AppDependencies = {}): Express {
   const watchCheckerService = new WatchCheckerService(
     companyWatchRepository,
     jobRepository,
-    new PlatformCareerPageFetcher(),
+    careerPageFetcher,
     profileRepository
   );
   const companyWatchService = new CompanyWatchService(profileRepository, companyWatchRepository, watchCheckerService);
   const profileDiscoveryService = new ProfileDiscoveryService(
     profileRepository,
     jobRepository,
-    new PlatformCareerPageFetcher()
+    careerPageFetcher
   );
   const jobIngestionService = new JobIngestionService(profileRepository, jobRepository);
   const jobService = new JobService(jobRepository);
@@ -92,9 +97,13 @@ export function createApp(dependencies: AppDependencies = {}): Express {
     profileRepository,
     watchCheckerService,
     profileDiscoveryService,
-    notificationRepository
+    notificationRepository,
+    jobRepository
   );
 
+  app.disable("x-powered-by");
+  app.set("trust proxy", 1);
+  app.use(securityHeaders);
   app.use(createCorsMiddleware(process.env.CORS_ORIGIN));
   app.use(express.json());
 
@@ -103,6 +112,15 @@ export function createApp(dependencies: AppDependencies = {}): Express {
       status: "ok",
       service: "roleradar-api"
     });
+  });
+
+  app.get("/ready", async (_request, response) => {
+    try {
+      await readinessCheck();
+      response.status(200).json({ status: "ready", service: "roleradar-api", database: "reachable" });
+    } catch {
+      response.status(503).json({ status: "not_ready", service: "roleradar-api", database: "unreachable" });
+    }
   });
 
   app.get("/api/v1", (_request, response) => {
@@ -129,6 +147,10 @@ export function createApp(dependencies: AppDependencies = {}): Express {
   app.use(errorHandler);
 
   return app;
+}
+
+async function checkDatabaseReadiness(): Promise<void> {
+  await prisma.$queryRaw`SELECT 1`;
 }
 
 function requiredEnv(name: string): string {

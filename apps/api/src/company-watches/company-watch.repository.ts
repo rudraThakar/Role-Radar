@@ -11,6 +11,8 @@ export interface CompanyWatchRepository {
   create(userId: string, profileId: string, input: CreateCompanyWatchInput): Promise<CompanyWatch>;
   delete(userId: string, profileId: string, watchId: string): Promise<boolean>;
   markChecked(userId: string, profileId: string, watchId: string, checkedAt: Date): Promise<CompanyWatch | null>;
+  markSucceeded(userId: string, profileId: string, watchId: string, checkedAt: Date): Promise<CompanyWatch | null>;
+  markFailed(userId: string, profileId: string, watchId: string, failedAt: Date, error: string): Promise<CompanyWatch | null>;
 }
 
 export class InMemoryCompanyWatchRepository implements CompanyWatchRepository {
@@ -67,6 +69,32 @@ export class InMemoryCompanyWatchRepository implements CompanyWatchRepository {
     this.watches.set(watchId, updatedWatch);
     return updatedWatch;
   }
+
+  async markSucceeded(userId: string, profileId: string, watchId: string, checkedAt: Date): Promise<CompanyWatch | null> {
+    const watch = await this.markChecked(userId, profileId, watchId, checkedAt);
+    if (watch === null) return null;
+    const { lastError: _lastError, ...watchWithoutError } = watch;
+    const updatedWatch: CompanyWatch = {
+      ...watchWithoutError,
+      lastSuccessAt: checkedAt,
+      consecutiveFailures: 0
+    };
+    this.watches.set(watchId, updatedWatch);
+    return updatedWatch;
+  }
+
+  async markFailed(userId: string, profileId: string, watchId: string, failedAt: Date, error: string): Promise<CompanyWatch | null> {
+    const watch = this.watches.get(watchId);
+    if (watch === undefined || watch.userId !== userId || watch.profileId !== profileId) return null;
+    const updatedWatch = {
+      ...watch,
+      lastFailureAt: failedAt,
+      lastError: error.slice(0, 500),
+      consecutiveFailures: (watch.consecutiveFailures ?? 0) + 1
+    };
+    this.watches.set(watchId, updatedWatch);
+    return updatedWatch;
+  }
 }
 
 export class PrismaCompanyWatchRepository implements CompanyWatchRepository {
@@ -78,7 +106,12 @@ export class PrismaCompanyWatchRepository implements CompanyWatchRepository {
       orderBy: { lastCheckedAt: "asc" }
     });
 
-    return watches.map(toCompanyWatch);
+    const health = toHealthMap(await this.prisma.$queryRaw<CompanyWatchHealthRecord[]>`
+      SELECT "id", "lastSuccessAt", "lastFailureAt", "lastError", "consecutiveFailures"
+      FROM "CompanyWatch"
+      WHERE "isActive" = true
+    `);
+    return watches.map((watch) => toCompanyWatch(watch, health.get(watch.id)));
   }
 
   async findForProfile(userId: string, profileId: string): Promise<CompanyWatch[]> {
@@ -87,7 +120,12 @@ export class PrismaCompanyWatchRepository implements CompanyWatchRepository {
       orderBy: { companyName: "asc" }
     });
 
-    return watches.map(toCompanyWatch);
+    const health = toHealthMap(await this.prisma.$queryRaw<CompanyWatchHealthRecord[]>`
+      SELECT "id", "lastSuccessAt", "lastFailureAt", "lastError", "consecutiveFailures"
+      FROM "CompanyWatch"
+      WHERE "userId" = ${userId} AND "profileId" = ${profileId}
+    `);
+    return watches.map((watch) => toCompanyWatch(watch, health.get(watch.id)));
   }
 
   async create(userId: string, profileId: string, input: CreateCompanyWatchInput): Promise<CompanyWatch> {
@@ -144,11 +182,56 @@ export class PrismaCompanyWatchRepository implements CompanyWatchRepository {
 
     return toCompanyWatch(watch);
   }
+
+  async markSucceeded(userId: string, profileId: string, watchId: string, checkedAt: Date): Promise<CompanyWatch | null> {
+    const updated = await this.prisma.$queryRaw<CompanyWatchHealthRow[]>`
+      UPDATE "CompanyWatch"
+      SET "lastCheckedAt" = ${checkedAt},
+          "lastSuccessAt" = ${checkedAt},
+          "lastError" = NULL,
+          "consecutiveFailures" = 0,
+          "updatedAt" = NOW()
+      WHERE "id" = ${watchId} AND "userId" = ${userId} AND "profileId" = ${profileId}
+      RETURNING "lastSuccessAt", "lastFailureAt", "lastError", "consecutiveFailures"
+    `;
+    const watch = await this.prisma.companyWatch.findFirst({ where: { id: watchId, userId, profileId } });
+    return watch === null ? null : toCompanyWatch(watch, updated[0]);
+  }
+
+  async markFailed(userId: string, profileId: string, watchId: string, failedAt: Date, error: string): Promise<CompanyWatch | null> {
+    const boundedError = error.slice(0, 500);
+    const updated = await this.prisma.$queryRaw<CompanyWatchHealthRow[]>`
+      UPDATE "CompanyWatch"
+      SET "lastFailureAt" = ${failedAt},
+          "lastError" = ${boundedError},
+          "consecutiveFailures" = "consecutiveFailures" + 1,
+          "updatedAt" = NOW()
+      WHERE "id" = ${watchId} AND "userId" = ${userId} AND "profileId" = ${profileId}
+      RETURNING "lastSuccessAt", "lastFailureAt", "lastError", "consecutiveFailures"
+    `;
+    const watch = await this.prisma.companyWatch.findFirst({ where: { id: watchId, userId, profileId } });
+    return watch === null ? null : toCompanyWatch(watch, updated[0]);
+  }
 }
 
 type PrismaCompanyWatch = Awaited<ReturnType<PrismaClient["companyWatch"]["findUnique"]>>;
 
-function toCompanyWatch(watch: NonNullable<PrismaCompanyWatch>): CompanyWatch {
+interface CompanyWatchHealthRow {
+  lastSuccessAt: Date | null;
+  lastFailureAt: Date | null;
+  lastError: string | null;
+  consecutiveFailures: number;
+}
+
+interface CompanyWatchHealthRecord extends CompanyWatchHealthRow {
+  id: string;
+}
+
+function toHealthMap(records: CompanyWatchHealthRecord[]): Map<string, CompanyWatchHealthRow> {
+  return new Map(records.map(({ id, ...health }) => [id, health]));
+}
+
+function toCompanyWatch(watch: NonNullable<PrismaCompanyWatch>, health?: CompanyWatchHealthRow): CompanyWatch {
   const companyWatch: CompanyWatch = {
     id: watch.id,
     userId: watch.userId,
@@ -162,6 +245,10 @@ function toCompanyWatch(watch: NonNullable<PrismaCompanyWatch>): CompanyWatch {
 
   if (watch.websiteUrl !== null) companyWatch.websiteUrl = watch.websiteUrl;
   if (watch.lastCheckedAt !== null) companyWatch.lastCheckedAt = watch.lastCheckedAt;
+  if (health?.lastSuccessAt != null) companyWatch.lastSuccessAt = health.lastSuccessAt;
+  if (health?.lastFailureAt != null) companyWatch.lastFailureAt = health.lastFailureAt;
+  if (health?.lastError != null) companyWatch.lastError = health.lastError;
+  if (health !== undefined) companyWatch.consecutiveFailures = health.consecutiveFailures;
 
   return companyWatch;
 }

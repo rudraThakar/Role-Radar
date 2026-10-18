@@ -13,6 +13,8 @@ enum ProfileDomain {
   EMBEDDED
   DATA_ML
   RESEARCH
+  MECHANICAL
+  CIVIL
 }
 
 enum WorkMode {
@@ -182,6 +184,10 @@ model CompanyWatch {
   websiteUrl       String?
   checkCadenceDays Int           @default(1)
   lastCheckedAt    DateTime?
+  lastSuccessAt    DateTime?
+  lastFailureAt    DateTime?
+  lastError        String?
+  consecutiveFailures Int        @default(0)
   isActive         Boolean       @default(true)
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt

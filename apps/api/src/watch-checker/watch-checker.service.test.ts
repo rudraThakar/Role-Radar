@@ -144,6 +144,17 @@ describe("career page fetcher", () => {
 
   it("fetches Workday jobs through the common CXS endpoint", async () => {
     const fetcher = new PlatformCareerPageFetcher(async (url, init) => {
+      if (String(url).endsWith("/job/embedded-software-engineer")) {
+        return jsonResponse({
+          jobPostingInfo: {
+            title: "Embedded Software Engineer",
+            jobDescription: "<p>Build firmware with C++ and an RTOS. No prior experience required.</p>",
+            location: "Bengaluru",
+            additionalLocations: ["Hyderabad"]
+          }
+        });
+      }
+
       assert.equal(String(url), "https://example.wd1.myworkdayjobs.com/wday/cxs/example/External/jobs");
       assert.equal(init?.method, "POST");
       assert.equal(JSON.parse(String(init?.body)).limit, 20);
@@ -171,14 +182,16 @@ describe("career page fetcher", () => {
 
     assert.equal(jobs[0]?.title, "Embedded Software Engineer");
     assert.equal(jobs[0]?.sourceUrl, "https://example.wd1.myworkdayjobs.com/en-US/External/job/embedded-software-engineer");
-    assert.deepEqual(jobs[0]?.locations, ["Bengaluru"]);
+    assert.deepEqual(jobs[0]?.locations, ["Bengaluru", "Hyderabad"]);
+    assert.match(jobs[0]?.description ?? "", /Build firmware/);
   });
 
   it("paginates Workday results with a bounded page loop", async () => {
-    let calls = 0;
-    const fetcher = new PlatformCareerPageFetcher(async (_url, init) => {
+    let listingCalls = 0;
+    const fetcher = new PlatformCareerPageFetcher(async (url, init) => {
+      if (!String(url).endsWith("/jobs")) return jsonResponse({});
       const body = JSON.parse(String(init?.body));
-      calls += 1;
+      listingCalls += 1;
       if (body.offset === 0) {
         return jsonResponse({
           total: 21,
@@ -213,12 +226,15 @@ describe("career page fetcher", () => {
       createdAt: new Date("2026-10-09T00:00:00.000Z")
     });
 
-    assert.equal(calls, 2);
+    assert.equal(listingCalls, 2);
     assert.equal(jobs.length, 21);
   });
 
   it("routes known NVIDIA career pages to the Workday board", async () => {
     const fetcher = new PlatformCareerPageFetcher(async (url, init) => {
+      if (String(url).includes("/wday/cxs/nvidia/NVIDIAExternalCareerSite/job/")) {
+        return jsonResponse({});
+      }
       assert.equal(String(url), "https://nvidia.wd5.myworkdayjobs.com/wday/cxs/nvidia/NVIDIAExternalCareerSite/jobs");
       assert.equal(init?.method, "POST");
       return jsonResponse({
@@ -278,6 +294,31 @@ describe("watch checker service", () => {
     assert.equal(summary.checked, 1);
     assert.equal(summary.created, 1);
     assert.equal(summary.jobs[0]?.minimumExperienceMonths, 0);
+    const [health] = await companyWatchRepository.findForProfile("user_1", "profile_1");
+    assert.equal(health?.consecutiveFailures, 0);
+    assert.equal(health?.lastSuccessAt?.toISOString(), "2026-10-09T00:00:00.000Z");
+  });
+
+  it("records connector failures without advancing the successful-check checkpoint", async () => {
+    const companyWatchRepository = new InMemoryCompanyWatchRepository();
+    const service = new WatchCheckerService(companyWatchRepository, new InMemoryJobRepository(), {
+      async fetchJobs() {
+        throw new Error("Source unavailable");
+      }
+    });
+    await companyWatchRepository.create("user_1", "profile_1", {
+      companyName: "ExampleCo",
+      careersUrl: "https://example.com/careers",
+      checkCadenceDays: 1
+    });
+
+    const summary = await service.checkDueWatches(new Date("2026-10-09T00:00:00.000Z"));
+    const [health] = await companyWatchRepository.findForProfile("user_1", "profile_1");
+
+    assert.equal(summary.failed, 1);
+    assert.equal(health?.consecutiveFailures, 1);
+    assert.equal(health?.lastError, "Source unavailable");
+    assert.equal(health?.lastCheckedAt, undefined);
   });
 
   it("skips watches that are not due yet", async () => {

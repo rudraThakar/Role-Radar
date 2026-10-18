@@ -150,7 +150,10 @@ export function selectDiscoverySources(profile: CareerProfile, sources: Discover
       return false;
     }
 
-    return source.domains.includes(profile.domain);
+    // Platform metadata is intentionally not used as a gate. A company can post
+    // any domain on the same ATS board; each fetched job is classified and
+    // strictly matched against the active profile before it is stored.
+    return true;
   });
 }
 

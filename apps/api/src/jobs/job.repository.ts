@@ -1,5 +1,5 @@
-import type { CanonicalJob } from "@roleradar/domain";
-import type { PrismaClient } from "@prisma/client";
+import { buildJobFingerprint, canonicalizeJobUrl, type CanonicalJob } from "@roleradar/domain";
+import type { ProfileDomain as PrismaProfileDomain, PrismaClient } from "@prisma/client";
 
 import type { CreateJobInput } from "./job.dto.js";
 
@@ -8,13 +8,16 @@ export interface JobRepository {
   findById(jobId: string): Promise<CanonicalJob | null>;
   create(input: CreateJobInput): Promise<CanonicalJob>;
   upsertBySourceUrl(input: CreateJobInput): Promise<{ job: CanonicalJob; created: boolean }>;
+  expireStale(cutoff: Date, expiredAt: Date): Promise<number>;
 }
 
 export class InMemoryJobRepository implements JobRepository {
   private readonly jobs = new Map<string, CanonicalJob>();
+  private readonly lastSeenAt = new Map<string, Date>();
 
   async findAll(): Promise<CanonicalJob[]> {
-    return [...this.jobs.values()];
+    const now = Date.now();
+    return [...this.jobs.values()].filter((job) => job.expiresAt === undefined || job.expiresAt.getTime() > now);
   }
 
   async findById(jobId: string): Promise<CanonicalJob | null> {
@@ -22,34 +25,48 @@ export class InMemoryJobRepository implements JobRepository {
   }
 
   async create(input: CreateJobInput): Promise<CanonicalJob> {
+    const normalizedInput = normalizeJobUrls(input);
     const job: CanonicalJob = {
       id: crypto.randomUUID(),
-      ...input,
+      ...normalizedInput,
       evidence: []
     };
 
     this.jobs.set(job.id, job);
+    this.lastSeenAt.set(job.id, new Date());
     return job;
   }
 
   async upsertBySourceUrl(input: CreateJobInput): Promise<{ job: CanonicalJob; created: boolean }> {
-    if (!isLikelyRealJobSourceUrl(input.sourceUrl)) {
+    const normalizedInput = normalizeJobUrls(input);
+    if (!isLikelyRealJobSourceUrl(normalizedInput.sourceUrl)) {
       throw new Error(`Refusing to persist non-job source URL: ${input.sourceUrl}`);
     }
 
-    const existingJob = [...this.jobs.values()].find((job) => job.sourceUrl === input.sourceUrl);
+    const fingerprint = buildJobFingerprint(normalizedInput);
+    const existingJob = [...this.jobs.values()].find(
+      (job) => job.sourceUrl === normalizedInput.sourceUrl || buildJobFingerprint(job) === fingerprint
+    );
     if (existingJob === undefined) {
-      return { job: await this.create(input), created: true };
+      return { job: await this.create(normalizedInput), created: true };
     }
 
-    const updatedJob: CanonicalJob = {
-      ...existingJob,
-      ...input,
-      id: existingJob.id,
-      evidence: existingJob.evidence
-    };
+    const updatedJob = mergeJob(existingJob, normalizedInput);
     this.jobs.set(updatedJob.id, updatedJob);
+    this.lastSeenAt.set(updatedJob.id, new Date());
     return { job: updatedJob, created: false };
+  }
+
+  async expireStale(cutoff: Date, expiredAt: Date): Promise<number> {
+    let expired = 0;
+    for (const [jobId, lastSeenAt] of this.lastSeenAt) {
+      const job = this.jobs.get(jobId);
+      if (job !== undefined && job.expiresAt === undefined && lastSeenAt < cutoff) {
+        this.jobs.set(jobId, { ...job, expiresAt: expiredAt });
+        expired += 1;
+      }
+    }
+    return expired;
   }
 }
 
@@ -59,11 +76,10 @@ export class PrismaJobRepository implements JobRepository {
   async findAll(): Promise<CanonicalJob[]> {
     const jobs = await this.prisma.job.findMany({
       where: {
-        sourceUrl: {
-          not: {
-            startsWith: "https://jobs.example.local/"
-          }
-        }
+        AND: [
+          { sourceUrl: { not: { startsWith: "https://jobs.example.local/" } } },
+          { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] }
+        ]
       },
       orderBy: { discoveredAt: "desc" }
     });
@@ -80,38 +96,125 @@ export class PrismaJobRepository implements JobRepository {
   }
 
   async create(input: CreateJobInput): Promise<CanonicalJob> {
-    if (!isLikelyRealJobSourceUrl(input.sourceUrl)) {
+    const normalizedInput = normalizeJobUrls(input);
+    if (!isLikelyRealJobSourceUrl(normalizedInput.sourceUrl)) {
       throw new Error(`Refusing to persist non-job source URL: ${input.sourceUrl}`);
     }
 
     const job = await this.prisma.job.create({
-      data: toPrismaJobWriteInput(input)
+      data: toPrismaJobWriteInput(normalizedInput)
     });
 
     return toCanonicalJob(job);
   }
 
   async upsertBySourceUrl(input: CreateJobInput): Promise<{ job: CanonicalJob; created: boolean }> {
-    if (!isLikelyRealJobSourceUrl(input.sourceUrl)) {
+    const normalizedInput = normalizeJobUrls(input);
+    if (!isLikelyRealJobSourceUrl(normalizedInput.sourceUrl)) {
       throw new Error(`Refusing to persist non-job source URL: ${input.sourceUrl}`);
     }
 
-    const existingJob = await this.prisma.job.findUnique({
-      where: { sourceUrl: input.sourceUrl }
+    const exactJob = await this.prisma.job.findUnique({
+      where: { sourceUrl: normalizedInput.sourceUrl }
     });
-    const job = await this.prisma.job.upsert({
-      where: { sourceUrl: input.sourceUrl },
-      update: toPrismaJobWriteInput(input),
-      create: toPrismaJobWriteInput(input)
+    const fingerprint = buildJobFingerprint(normalizedInput);
+    const candidates =
+      exactJob === null
+        ? await this.prisma.job.findMany({
+            where: {
+              normalizedTitle: normalizedInput.normalizedTitle,
+              companyName: { equals: normalizedInput.companyName, mode: "insensitive" }
+            },
+            take: 25
+          })
+        : [];
+    const duplicateJob = candidates.find((candidate) => buildJobFingerprint(toCanonicalJob(candidate)) === fingerprint);
+    const existingJob = exactJob ?? duplicateJob ?? null;
+
+    if (existingJob === null) {
+      return { job: await this.create(normalizedInput), created: true };
+    }
+
+    const mergedInput = mergeJob(toCanonicalJob(existingJob), normalizedInput);
+    const job = await this.prisma.job.update({
+      where: { id: existingJob.id },
+      data: {
+        ...toPrismaJobWriteInput(toCreateJobInput(mergedInput)),
+        discoveredAt: existingJob.discoveredAt,
+        expiresAt: null
+      }
     });
 
-    return { job: toCanonicalJob(job), created: existingJob === null };
+    return { job: toCanonicalJob(job), created: false };
+  }
+
+  async expireStale(cutoff: Date, expiredAt: Date): Promise<number> {
+    const result = await this.prisma.job.updateMany({
+      where: {
+        expiresAt: null,
+        updatedAt: { lt: cutoff }
+      },
+      data: { expiresAt: expiredAt }
+    });
+    return result.count;
   }
 }
 
-function toPrismaJobWriteInput(input: CreateJobInput): CreateJobInput & { eligibleGraduationYears: number[] } {
+function normalizeJobUrls(input: CreateJobInput): CreateJobInput {
   return {
     ...input,
+    sourceUrl: canonicalizeJobUrl(input.sourceUrl),
+    applyUrl: canonicalizeJobUrl(input.applyUrl)
+  };
+}
+
+function mergeJob(existing: CanonicalJob, incoming: CreateJobInput): CanonicalJob {
+  const useIncomingUrl = sourcePreference(incoming.sourceUrl) > sourcePreference(existing.sourceUrl);
+  return {
+    ...existing,
+    ...incoming,
+    id: existing.id,
+    description: incoming.description.length >= existing.description.length ? incoming.description : existing.description,
+    domains: unique([...existing.domains, ...incoming.domains]),
+    skills: unique([...existing.skills, ...incoming.skills]),
+    locations: unique([...existing.locations, ...incoming.locations]),
+    sourceUrl: useIncomingUrl ? incoming.sourceUrl : existing.sourceUrl,
+    applyUrl: useIncomingUrl ? incoming.applyUrl : existing.applyUrl,
+    discoveredAt: existing.discoveredAt,
+    evidence: existing.evidence
+  };
+}
+
+function sourcePreference(sourceUrl: string): number {
+  try {
+    const hostname = new URL(sourceUrl).hostname.toLowerCase();
+    if (hostname.includes("myworkdayjobs.com")) return 3;
+    if (hostname.includes("greenhouse.io") || hostname === "jobs.lever.co" || hostname === "jobs.ashbyhq.com") return 3;
+    return 2;
+  } catch {
+    return 0;
+  }
+}
+
+function unique<TValue>(values: TValue[]): TValue[] {
+  return [...new Set(values)];
+}
+
+function toCreateJobInput(job: CanonicalJob): CreateJobInput {
+  const { id: _id, evidence: _evidence, ...input } = job;
+  return input;
+}
+
+function toPrismaJobWriteInput(input: CreateJobInput): Omit<CreateJobInput, "domains"> & {
+  domains: PrismaProfileDomain[];
+  eligibleGraduationYears: number[];
+} {
+  return {
+    ...input,
+    // Prisma's generated enum is refreshed by `db:generate` after migrations.
+    // Keep this cast at the persistence boundary so the domain package remains
+    // the single source of truth for supported profile domains.
+    domains: input.domains as PrismaProfileDomain[],
     eligibleGraduationYears: input.eligibleGraduationYears ?? []
   };
 }

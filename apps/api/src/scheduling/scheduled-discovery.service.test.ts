@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { type ProfileDiscoveryService } from "../discovery/profile-discovery.service.js";
+import { InMemoryJobRepository } from "../jobs/job.repository.js";
 import { InMemoryNotificationRepository } from "../notifications/notification.repository.js";
 import { InMemoryProfileRepository } from "../profiles/profile.repository.js";
 import { type WatchCheckerService } from "../watch-checker/watch-checker.service.js";
@@ -46,7 +47,8 @@ describe("scheduled discovery service", () => {
           };
         }
       } as unknown as ProfileDiscoveryService,
-      notificationRepository
+      notificationRepository,
+      new InMemoryJobRepository()
     );
 
     const summary = await service.run();
@@ -55,6 +57,7 @@ describe("scheduled discovery service", () => {
     assert.equal(summary.profilesChecked, 1);
     assert.equal(summary.created, 3);
     assert.equal(summary.notificationsCreated, 1);
+    assert.equal(summary.expired, 0);
     assert.equal(notifications[0]?.profileId, profile.id);
     assert.equal(notifications[0]?.jobCount, 3);
   });

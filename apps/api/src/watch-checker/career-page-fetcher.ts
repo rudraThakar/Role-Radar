@@ -7,8 +7,11 @@ export interface CareerPageFetcher {
 
 type FetchLike = typeof fetch;
 const defaultFetchTimeoutMs = 12_000;
+const defaultFetchAttempts = 3;
+const initialRetryDelayMs = 200;
 const workdayPageSize = 20;
 const maximumWorkdayPages = 5;
+const workdayDetailConcurrency = 5;
 
 interface CareerPlatformAdapter {
   readonly name: string;
@@ -20,14 +23,14 @@ export class PlatformCareerPageFetcher implements CareerPageFetcher {
   private readonly adapters: CareerPlatformAdapter[];
 
   constructor(fetcher: FetchLike = fetch, timeoutMs = defaultFetchTimeoutMs) {
-    const timedFetcher = withTimeout(fetcher, timeoutMs);
-    const genericFetcher = new GenericCareerPageFetcher(timedFetcher);
+    const resilientFetcher = withRetry(withTimeout(fetcher, timeoutMs), defaultFetchAttempts, initialRetryDelayMs);
+    const genericFetcher = new GenericCareerPageFetcher(resilientFetcher);
     this.adapters = [
-      new GreenhouseAdapter(timedFetcher),
-      new LeverAdapter(timedFetcher),
-      new AshbyAdapter(timedFetcher),
-      new WorkdayAdapter(timedFetcher, genericFetcher),
-      new KnownCareerPageAdapter(timedFetcher, genericFetcher),
+      new GreenhouseAdapter(resilientFetcher),
+      new LeverAdapter(resilientFetcher),
+      new AshbyAdapter(resilientFetcher),
+      new WorkdayAdapter(resilientFetcher, genericFetcher),
+      new KnownCareerPageAdapter(resilientFetcher, genericFetcher),
       genericFetcher
     ];
   }
@@ -184,7 +187,7 @@ class WorkdayAdapter implements CareerPlatformAdapter {
       return this.genericFetcher.fetchJobs(watch);
     }
 
-    const jobs: RawJobPostingInput[] = [];
+    const postings: WorkdayJobPosting[] = [];
     let offset = 0;
     let total = Number.POSITIVE_INFINITY;
 
@@ -208,17 +211,57 @@ class WorkdayAdapter implements CareerPlatformAdapter {
       }
 
       const payload = (await response.json()) as WorkdayJobsResponse;
-      const postings = payload.jobPostings ?? [];
-      jobs.push(...postings.map((job) => toWorkdayJob(watch, job)));
-      total = payload.total ?? payload.totalHits ?? postings.length + offset;
-      offset += postings.length;
+      const pagePostings = payload.jobPostings ?? [];
+      postings.push(...pagePostings);
+      total = payload.total ?? payload.totalHits ?? pagePostings.length + offset;
+      offset += pagePostings.length;
 
-      if (postings.length < workdayPageSize) {
+      if (pagePostings.length < workdayPageSize) {
         break;
       }
     }
 
+    const jobs = await mapWithConcurrency(postings, workdayDetailConcurrency, (posting) =>
+      this.fetchDetailedJob(watch, posting)
+    );
     return deduplicateJobsBySourceUrl(jobs);
+  }
+
+  private async fetchDetailedJob(watch: CompanyWatch, posting: WorkdayJobPosting): Promise<RawJobPostingInput> {
+    const fallback = toWorkdayJob(watch, posting);
+    const endpoint = buildWorkdayDetailEndpoint(watch.careersUrl, posting.externalPath);
+    if (endpoint === undefined) return fallback;
+
+    try {
+      const response = await this.fetcher(endpoint, {
+        headers: { "user-agent": "RoleRadarBot/0.1" }
+      });
+      if (!response.ok) return fallback;
+
+      const payload = (await response.json()) as WorkdayJobDetailResponse;
+      const detail = payload.jobPostingInfo;
+      if (detail === undefined) return fallback;
+
+      const sourceUrl = toAbsoluteUrl(posting.externalPath, watch.careersUrl) ?? fallback.sourceUrl;
+      const locations = uniqueStrings([
+        detail.location,
+        ...(detail.additionalLocations ?? []),
+        ...(fallback.locations ?? [])
+      ]);
+      return withOptionalPublishedAt(
+        {
+          companyName: watch.companyName,
+          title: detail.title?.trim() || posting.title,
+          description: textFromHtml(detail.jobDescription ?? fallback.description),
+          sourceUrl,
+          applyUrl: detail.externalUrl === undefined ? sourceUrl : (toAbsoluteUrl(detail.externalUrl, watch.careersUrl) ?? sourceUrl),
+          locations
+        },
+        parseWorkdayPostedAt(detail.postedOn ?? posting.postedOn)
+      );
+    } catch {
+      return fallback;
+    }
   }
 }
 
@@ -391,6 +434,17 @@ function buildWorkdayJobsEndpoint(careersUrl: string): string | undefined {
   return `${url.origin}/wday/cxs/${tenant}/${site}/jobs`;
 }
 
+function buildWorkdayDetailEndpoint(careersUrl: string, externalPath: string): string | undefined {
+  const jobsEndpoint = buildWorkdayJobsEndpoint(careersUrl);
+  if (jobsEndpoint === undefined) return undefined;
+  const baseEndpoint = jobsEndpoint.replace(/\/jobs$/, "");
+  const pathSegments = externalPath.split("/").filter(Boolean);
+  const jobSegmentIndex = pathSegments.findIndex((segment) => segment.toLowerCase() === "job");
+  if (jobSegmentIndex === -1) return undefined;
+  const detailPath = `/${pathSegments.slice(jobSegmentIndex).join("/")}`;
+  return `${baseEndpoint}${detailPath}`;
+}
+
 function knownCareerPageUrl(watch: CompanyWatch): string | undefined {
   const url = parseUrl(watch.careersUrl);
   if (url === undefined) return undefined;
@@ -436,6 +490,60 @@ function withTimeout(fetcher: FetchLike, timeoutMs: number): FetchLike {
       clearTimeout(timeout);
     }
   };
+}
+
+function withRetry(fetcher: FetchLike, maximumAttempts: number, initialDelayMs: number): FetchLike {
+  return async (input, init = {}) => {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
+      try {
+        const response = await fetcher(input, init);
+        if (!isRetriableStatus(response.status) || attempt === maximumAttempts) {
+          return response;
+        }
+      } catch (error) {
+        lastError = error;
+        if (attempt === maximumAttempts) throw error;
+      }
+
+      await delay(initialDelayMs * 2 ** (attempt - 1));
+    }
+
+    throw lastError instanceof Error ? lastError : new Error("Job source request failed");
+  };
+}
+
+function isRetriableStatus(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function mapWithConcurrency<TInput, TOutput>(
+  values: TInput[],
+  concurrency: number,
+  mapper: (value: TInput) => Promise<TOutput>
+): Promise<TOutput[]> {
+  const results: TOutput[] = new Array(values.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < values.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const value = values[index];
+      if (value !== undefined) results[index] = await mapper(value);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, values.length) }, () => worker()));
+  return results;
+}
+
+function uniqueStrings(values: Array<string | undefined>): string[] {
+  return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
 }
 
 function parseUrl(value: string): URL | undefined {
@@ -497,4 +605,15 @@ interface WorkdayJobPosting {
   locationsText?: string;
   postedOn?: string;
   bulletFields?: string[];
+}
+
+interface WorkdayJobDetailResponse {
+  jobPostingInfo?: {
+    title?: string;
+    jobDescription?: string;
+    location?: string;
+    additionalLocations?: string[];
+    externalUrl?: string;
+    postedOn?: string;
+  };
 }

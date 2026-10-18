@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { CareerProfile } from "@roleradar/domain";
-import type { PrismaClient } from "@prisma/client";
+import type { ProfileDomain as PrismaProfileDomain, PrismaClient } from "@prisma/client";
 
 import type { CreateProfileInput, UpdateProfileInput } from "./profile.dto.js";
 
@@ -92,10 +92,7 @@ export class PrismaProfileRepository implements ProfileRepository {
 
   async create(userId: string, input: CreateProfileInput): Promise<CareerProfile> {
     const profile = await this.prisma.careerProfile.create({
-      data: {
-        ...input,
-        userId
-      }
+      data: toPrismaCreateProfileInput(userId, input)
     });
 
     return toCareerProfile(profile);
@@ -112,7 +109,7 @@ export class PrismaProfileRepository implements ProfileRepository {
 
     const profile = await this.prisma.careerProfile.update({
       where: { id: profileId },
-      data: input
+      data: toPrismaUpdateProfileInput(input)
     });
 
     return toCareerProfile(profile);
@@ -177,4 +174,21 @@ function toCareerProfile(profile: NonNullable<PrismaCareerProfile>): CareerProfi
 function toPublicCareerProfile(profile: CareerProfile & { userId: string }): CareerProfile {
   const { userId: _userId, ...careerProfile } = profile;
   return careerProfile;
+}
+
+function toPrismaCreateProfileInput(userId: string, input: CreateProfileInput) {
+  const { domain, ...rest } = input;
+  return {
+    ...rest,
+    userId,
+    domain: domain as PrismaProfileDomain
+  };
+}
+
+function toPrismaUpdateProfileInput(input: UpdateProfileInput) {
+  const { domain, ...rest } = input;
+  return {
+    ...rest,
+    ...(domain === undefined ? {} : { domain: domain as PrismaProfileDomain })
+  };
 }
