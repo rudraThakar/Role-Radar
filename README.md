@@ -66,19 +66,21 @@ This is still industry-level because it keeps strong boundaries:
 - Repositories handle database access.
 - Tests prove behavior.
 
-## Current Step
+## Current Status
 
-Step 1 is project foundation.
+The first four milestones are implemented as a working vertical slice:
 
-We are setting up:
+- Email/password and Google authentication with rotating refresh sessions
+- Multiple career profiles with separate preferences and resumes
+- PDF resume storage in Supabase Storage, extraction, suggestions, and resume replacement/history
+- Greenhouse, Lever, Ashby, Workday, and generic official-career-page adapters
+- Daily profile-specific discovery plus user-provided company watches and CSV import
+- Deterministic classification, experience/location eligibility, role matching, and explainable scoring
+- URL and company/title/location deduplication with conservative stale-job expiry
+- Recommendation feeds with filters and saved, hidden, viewed, and applied states
+- Protected GitHub Actions scheduling
 
-- A monorepo layout
-- Shared domain and contract packages
-- API and web app placeholders
-- Architecture documentation
-- The first ADR: keep the MVP simple and vertical-slice-first
-
-No production behavior is implemented yet. The next step is to add the first tested domain logic for job classification, eligibility, and ranking.
+The repository is prepared for production operation through the checked-in Vercel and Render configurations, strict runtime validation, database readiness checks, bounded-concurrency discovery, CI migration verification, and a post-deployment smoke-test runbook. After deployment, the next engineering work is broader source coverage and observability as traffic warrants.
 
 ## Proposed Milestones
 
@@ -181,25 +183,18 @@ The first implementation target is the domain package because it teaches the mos
 
 ## Local API And Database
 
-Start PostgreSQL:
-
-```bash
-docker compose up -d postgres
-```
-
-Create `apps/api/.env` from `apps/api/.env.example`, then run:
+RoleRadar uses Supabase PostgreSQL as its source of truth and does not require a local PostgreSQL database. Create `apps/api/.env` from `apps/api/.env.example`, set `DATABASE_URL` to the Supabase Session Pooler connection string, then run:
 
 ```bash
 npm --workspace @roleradar/api run db:generate
-npm --workspace @roleradar/api run db:migrate
+npm --workspace @roleradar/api run db:deploy
 npm run build
-npm --workspace @roleradar/api run seed
 npm --workspace @roleradar/api start
 ```
 
 The API runs on `http://localhost:3000`.
 
-For hosted deployment notes, required environment variables, CORS setup, and production Prisma migrations, see [docs/deployment.md](docs/deployment.md).
+For the Render and Vercel deployment order, required secrets, startup validation, CORS/OAuth setup, migrations, and the production smoke test, see [docs/deployment.md](docs/deployment.md).
 
 Register and call an authenticated route:
 
@@ -231,10 +226,20 @@ The two profiles should receive different recommendation rankings.
 Recommendations use hard filters before scoring:
 
 - Jobs requiring more experience than the profile has are not shown.
-- Onsite and hybrid jobs outside the profile's preferred locations are not shown.
-- Remote jobs still require the profile to allow remote work.
+- Jobs outside the profile's preferred locations are not shown when a concrete location is available.
+- Country-restricted remote jobs are treated as jobs in that country, not globally remote jobs.
+- Remote jobs require the profile to allow remote work.
+- Jobs must match both the active profile domain and at least one preferred role when roles are configured.
 
-For example, an India-focused fresher profile will not see USA onsite/hybrid jobs by default. To opt in, add `USA` or a specific USA city to that profile's preferred locations.
+For example, an India-focused fresher profile will not see USA jobs by default. To opt in, enable `Include international roles` and add `USA` or a specific USA city to that profile's preferred locations.
+
+## Discovery And Job Lifecycle
+
+Every daily run searches all configured ATS boards for every owned profile. Source-level domain tags are hints only; each actual opening is classified and checked against the profile before storage.
+
+Source calls use timeouts, bounded exponential retries, and a four-source concurrency ceiling. Workday listing records are enriched from their detail endpoints where available. Tracking parameters are removed from URLs, and duplicates are merged using canonical URL followed by normalized company, title, and location. Existing jobs keep their original discovery time when refreshed. Jobs that have not been refreshed for 30 days are hidden as expired instead of being deleted.
+
+See [docs/scheduled-discovery.md](docs/scheduled-discovery.md) for the one-time deployment and GitHub secret configuration needed to make daily discovery operational.
 
 ## Resume Metadata
 
