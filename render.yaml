@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: roleradar-api
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm --workspace @roleradar/api run db:generate && npm run build && npm --workspace @roleradar/api run db:deploy
+    startCommand: npm --workspace @roleradar/api start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22.23.2"
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CRON_SECRET
+        generateValue: true
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: SUPABASE_RESUME_BUCKET
+        value: resumes
