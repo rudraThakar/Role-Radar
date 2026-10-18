@@ -74,6 +74,10 @@ export interface CompanyWatch {
   websiteUrl?: string;
   checkCadenceDays: number;
   lastCheckedAt?: string;
+  lastSuccessAt?: string;
+  lastFailureAt?: string;
+  lastError?: string;
+  consecutiveFailures?: number;
   isActive: boolean;
   createdAt: string;
 }

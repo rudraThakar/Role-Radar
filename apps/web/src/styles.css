@@ -522,6 +522,17 @@ button {
   font-size: 15px;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.scan-jobs-button {
+  min-width: 118px;
+}
+
 .profile-strip {
   display: grid;
   grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
@@ -1059,6 +1070,12 @@ button {
   margin-top: 5px;
 }
 
+.watch-item .watch-error {
+  color: #b42318;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .inline-empty {
   display: inline-flex;
   align-items: center;
@@ -1167,8 +1184,15 @@ button {
 
 .job-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(250px, auto);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "main meta"
+    "description description"
+    "reasons reasons"
+    "tracker tracker"
+    "actions actions";
+  column-gap: 18px;
+  row-gap: 12px;
   padding: 16px;
   transition:
     border-color 150ms ease,
@@ -1183,6 +1207,7 @@ button {
 }
 
 .job-card-main {
+  grid-area: main;
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr);
   gap: 12px;
@@ -1209,8 +1234,9 @@ button {
 }
 
 .job-card .job-description {
+  grid-area: description;
   max-width: 860px;
-  margin-top: 11px;
+  margin-top: 0;
   color: #475467;
   line-height: 1.55;
 }
@@ -1231,22 +1257,43 @@ button {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 11px;
+  margin-top: 0;
+}
+
+.job-meta {
+  grid-area: meta;
+  align-self: start;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.reason-list {
+  grid-area: reasons;
+  align-items: center;
+  max-width: 100%;
 }
 
 .job-meta span,
 .reason-list span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
   border-radius: 999px;
-  padding: 5px 9px;
+  padding: 6px 10px;
   color: #344054;
   background: #f2f4f7;
   font-size: 12px;
   font-weight: 720;
+  line-height: 1.25;
 }
 
 .reason-list span {
+  max-width: min(100%, 420px);
   color: var(--green);
   background: var(--green-soft);
+  text-align: left;
+  white-space: normal;
 }
 
 .role-suggestions span {
@@ -1255,16 +1302,17 @@ button {
 }
 
 .job-actions {
+  grid-area: actions;
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   align-content: start;
   gap: 8px;
-  min-width: 250px;
+  min-width: 0;
 }
 
 .application-tracker {
-  grid-column: 1 / -1;
+  grid-area: tracker;
   display: grid;
   gap: 10px;
   border: 1px solid var(--line);
@@ -1356,6 +1404,17 @@ button {
 
   .job-card {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      "main"
+      "meta"
+      "description"
+      "reasons"
+      "tracker"
+      "actions";
+  }
+
+  .job-meta {
+    justify-content: flex-start;
   }
 
   .job-actions {
@@ -1418,6 +1477,10 @@ button {
 
   .topbar {
     display: grid;
+  }
+
+  .topbar-actions {
+    justify-self: start;
   }
 
   .discovery-callout {

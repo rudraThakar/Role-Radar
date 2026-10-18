@@ -70,11 +70,9 @@ import {
   , type UserNotification
 } from "./api.js";
 
-const demoEmail = "demo@roleradar.local";
-const demoPassword = "password123";
 const tabs = ["ALL", "SAVED", "APPLIED", "HIDDEN"] as const;
 const workspaceViews = ["JOBS", "PROFILE", "SOURCES"] as const;
-const profileDomains = ["SOFTWARE", "DIGITAL_HARDWARE", "EMBEDDED", "DATA_ML", "RESEARCH"] as const;
+const profileDomains = ["SOFTWARE", "DIGITAL_HARDWARE", "EMBEDDED", "DATA_ML", "RESEARCH", "MECHANICAL", "CIVIL"] as const;
 const workModes = ["ONSITE", "HYBRID", "REMOTE"] as const;
 const employmentTypes = ["FULL_TIME", "INTERNSHIP", "CONTRACT", "PART_TIME"] as const;
 const seniorityFilters = ["FRESHER", "ENTRY_LEVEL", "MID_LEVEL", "SENIOR"] as const;
@@ -148,8 +146,8 @@ const emptyCompanyWatchForm: CompanyWatchFormState = {
 
 export function App(): JSX.Element {
   const [authMode, setAuthMode] = useState<AuthMode>("SIGN_IN");
-  const [email, setEmail] = useState(import.meta.env.DEV ? demoEmail : "");
-  const [password, setPassword] = useState(import.meta.env.DEV ? demoPassword : "");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [auth, setAuth] = useState<AuthResult | null>(null);
   const [profiles, setProfiles] = useState<CareerProfile[]>([]);
@@ -178,6 +176,7 @@ export function App(): JSX.Element {
   });
   const [applicationDrafts, setApplicationDrafts] = useState<Record<string, { applicationStage: ApplicationStage; applicationNotes: string }>>({});
   const [isLoading, setIsLoading] = useState(false);
+  const [isScanningJobs, setIsScanningJobs] = useState(false);
   const [isRestoringAuth, setIsRestoringAuth] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const googleButtonRef = useRef<HTMLDivElement | null>(null);
@@ -580,6 +579,7 @@ export function App(): JSX.Element {
     if (auth === null || selectedProfileId === null) return;
 
     setIsLoading(true);
+    setIsScanningJobs(true);
     setError(null);
 
     try {
@@ -589,6 +589,7 @@ export function App(): JSX.Element {
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Could not discover matching jobs");
     } finally {
+      setIsScanningJobs(false);
       setIsLoading(false);
     }
   }
@@ -965,15 +966,28 @@ export function App(): JSX.Element {
               </p>
             )}
           </div>
-          <button
-            className="icon-button"
-            disabled={selectedProfileId === null || isLoading}
-            onClick={() => selectedProfileId !== null && void refreshRecommendations(selectedProfileId)}
-            title="Refresh recommendations"
-            type="button"
-          >
-            <RefreshCw size={18} aria-hidden="true" />
-          </button>
+          {workspaceView === "JOBS" && (
+            <div className="topbar-actions">
+              <button
+                className="icon-button"
+                disabled={selectedProfileId === null || isLoading}
+                onClick={() => selectedProfileId !== null && void refreshRecommendations(selectedProfileId)}
+                title="Reload stored jobs"
+                type="button"
+              >
+                <RefreshCw size={18} aria-hidden="true" />
+              </button>
+              <button
+                className="primary-button scan-jobs-button"
+                disabled={selectedProfileId === null || isLoading}
+                onClick={() => void handleDiscoverProfileJobs()}
+                type="button"
+              >
+                <Radar size={16} aria-hidden="true" />
+                {isScanningJobs ? "Scanning jobs..." : "Scan jobs"}
+              </button>
+            </div>
+          )}
         </header>
 
         {showCreateProfilePanel && (
@@ -1604,7 +1618,11 @@ export function App(): JSX.Element {
                         <Clock3 size={12} aria-hidden="true" />
                         Every {watch.checkCadenceDays} day{watch.checkCadenceDays === 1 ? "" : "s"}
                         {watch.lastCheckedAt === undefined ? "" : ` · Checked ${formatDate(watch.lastCheckedAt)}`}
+                        {(watch.consecutiveFailures ?? 0) === 0
+                          ? ""
+                          : ` · ${watch.consecutiveFailures} failed check${watch.consecutiveFailures === 1 ? "" : "s"}`}
                       </small>
+                      {watch.lastError !== undefined && <small className="watch-error">{watch.lastError}</small>}
                     </div>
                     <button
                       className="icon-button"
@@ -1739,7 +1757,7 @@ export function App(): JSX.Element {
                 <div className="job-meta">
                   <span>{formatDomain(job.seniority)}</span>
                   <span>{formatDomain(job.workMode)}</span>
-                  {recommendation !== null && <span>{recommendation.eligibility.replace("_", " ")}</span>}
+                  {recommendation !== null && <span>{formatDomain(recommendation.eligibility)}</span>}
                   {state !== undefined && <span>{formatDomain(state)}</span>}
                 </div>
 
@@ -1748,7 +1766,7 @@ export function App(): JSX.Element {
                 {recommendation !== null && (
                   <div className="reason-list">
                     {recommendation.reasons.slice(0, 3).map((reason) => (
-                      <span key={reason}>{reason}</span>
+                      <span key={reason}>{formatRecommendationReason(reason)}</span>
                     ))}
                   </div>
                 )}
@@ -1872,6 +1890,10 @@ function formatDomain(value: string): string {
 
 function formatDomainList(values: string[]): string {
   return values.map(formatDomain).join(", ");
+}
+
+function formatRecommendationReason(reason: string): string {
+  return reason.replace(/\b[A-Z]+(?:_[A-Z]+)+\b/g, (value) => formatDomain(value));
 }
 
 function formatFileSize(sizeBytes: number): string {
