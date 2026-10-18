@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.env.local
+coverage/
+.turbo/
+*.log
+*.tsbuildinfo
+.tmp-*/
+.vercel/
+uploads/
+apps/api/uploads/
