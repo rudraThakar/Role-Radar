@@ -5,6 +5,7 @@ import { after, before, test } from "node:test";
 import { InMemoryRefreshSessionRepository } from "./auth/refresh-session.repository.js";
 import { InMemoryUserRepository } from "./auth/user.repository.js";
 import { InMemoryCompanyWatchRepository } from "./company-watches/company-watch.repository.js";
+import { InMemoryDiscoverySourceRepository } from "./discovery/discovery-source.repository.js";
 import { InMemoryJobStateRepository } from "./job-states/job-state.repository.js";
 import { InMemoryJobRepository } from "./jobs/job.repository.js";
 import { InMemoryNotificationRepository } from "./notifications/notification.repository.js";
@@ -38,9 +39,21 @@ const careerPageFetcher: CareerPageFetcher = {
     ];
   }
 };
+const discoverySourceRepository = new InMemoryDiscoverySourceRepository([
+  {
+    id: "acme-test",
+    companyName: "Acme India",
+    careersUrl: "https://careers.acme.example/jobs",
+    provider: "HTML",
+    domains: ["SOFTWARE"],
+    locations: ["Bengaluru"],
+    roleKeywords: ["backend"]
+  }
+]);
 
 const app = createApp({
   careerPageFetcher,
+  discoverySourceRepository,
   companyWatchRepository: new InMemoryCompanyWatchRepository(),
   jobRepository: new InMemoryJobRepository(),
   jobStateRepository: new InMemoryJobStateRepository(),

@@ -125,6 +125,48 @@ model Job {
   @@index([workMode])
 }
 
+model JobDiscoverySource {
+  id                  String            @id
+  companyName         String
+  careersUrl          String            @unique
+  provider            String
+  domains             ProfileDomain[]
+  locations           String[]
+  roleKeywords        String[]
+  isActive             Boolean           @default(true)
+  isSystem             Boolean           @default(true)
+  lastCheckedAt        DateTime?
+  lastSuccessAt        DateTime?
+  lastFailureAt        DateTime?
+  lastError            String?
+  consecutiveFailures Int               @default(0)
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  runs                 JobDiscoveryRun[]
+
+  @@index([isActive])
+  @@index([provider])
+  @@index([lastCheckedAt])
+}
+
+model JobDiscoveryRun {
+  id          String             @id @default(uuid())
+  sourceId    String
+  status      String
+  fetched     Int                @default(0)
+  normalized  Int                @default(0)
+  created     Int                @default(0)
+  updated     Int                @default(0)
+  failed      Int                @default(0)
+  error       String?
+  startedAt   DateTime
+  completedAt DateTime
+  source      JobDiscoverySource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@index([sourceId, startedAt])
+  @@index([status, startedAt])
+}
+
 model CareerProfile {
   id                   String           @id @default(uuid())
   userId               String?

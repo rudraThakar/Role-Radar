@@ -1,66 +1,33 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import type { CareerProfile } from "@roleradar/domain";
-
-import { selectDiscoverySources, type DiscoverySource } from "./source-registry.js";
+import { defaultDiscoverySources } from "./source-registry.js";
 
 describe("discovery source registry", () => {
-  it("checks every non-excluded platform source and defers relevance to job-level matching", () => {
-    const profile: CareerProfile = {
-      id: "profile_1",
-      name: "RTL Design Engineer",
-      domain: "DIGITAL_HARDWARE",
-      experienceMonths: 0,
-      preferredRoles: ["RTL Design Engineer"],
-      preferredLocations: ["Bengaluru"],
-      preferredWorkModes: ["HYBRID"],
-      targetCompanies: [],
-      excludedCompanies: [],
-      includedKeywords: [],
-      excludedKeywords: [],
-      skills: ["Verilog"],
-      seeksEmploymentTypes: ["FULL_TIME"]
-    };
-    const source: DiscoverySource = {
-      id: "hardware-board",
-      companyName: "HardwareCo",
-      careersUrl: "https://boards.greenhouse.io/hardwareco",
-      provider: "GREENHOUSE",
-      domains: ["SOFTWARE"],
-      locations: ["USA"],
-      roleKeywords: ["verification"]
-    };
+  it("contains verified boards across every supported ATS adapter", () => {
+    const providers = new Set(defaultDiscoverySources.map((source) => source.provider));
 
-    assert.deepEqual(selectDiscoverySources(profile, [source]), [source]);
+    assert.equal(providers.has("GREENHOUSE"), true);
+    assert.equal(providers.has("LEVER"), true);
+    assert.equal(providers.has("ASHBY"), true);
+    assert.equal(providers.has("WORKDAY"), true);
+    assert.equal(providers.has("HTML"), true);
   });
 
-  it("does not check sources excluded by the active profile", () => {
-    const profile: CareerProfile = {
-      id: "profile_1",
-      name: "RTL Design Engineer",
-      domain: "DIGITAL_HARDWARE",
-      experienceMonths: 0,
-      preferredRoles: ["RTL Design Engineer"],
-      preferredLocations: ["Bengaluru"],
-      preferredWorkModes: ["HYBRID"],
-      targetCompanies: [],
-      excludedCompanies: ["HardwareCo"],
-      includedKeywords: [],
-      excludedKeywords: [],
-      skills: ["Verilog"],
-      seeksEmploymentTypes: ["FULL_TIME"]
-    };
-    const source: DiscoverySource = {
-      id: "hardware-board",
-      companyName: "HardwareCo",
-      careersUrl: "https://boards.greenhouse.io/hardwareco",
-      provider: "GREENHOUSE",
-      domains: ["SOFTWARE"],
-      locations: ["USA"],
-      roleKeywords: ["verification"]
-    };
+  it("has unique source ids and career URLs", () => {
+    const ids = defaultDiscoverySources.map((source) => source.id);
+    const urls = defaultDiscoverySources.map((source) => source.careersUrl);
 
-    assert.deepEqual(selectDiscoverySources(profile, [source]), []);
+    assert.equal(new Set(ids).size, ids.length);
+    assert.equal(new Set(urls).size, urls.length);
+  });
+
+  it("includes sources beyond software-only companies", () => {
+    const coveredDomains = new Set(defaultDiscoverySources.flatMap((source) => source.domains));
+
+    assert.equal(coveredDomains.has("DIGITAL_HARDWARE"), true);
+    assert.equal(coveredDomains.has("EMBEDDED"), true);
+    assert.equal(coveredDomains.has("MECHANICAL"), true);
+    assert.equal(coveredDomains.has("RESEARCH"), true);
   });
 });

@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import { InMemoryJobRepository } from "../jobs/job.repository.js";
 import { InMemoryProfileRepository } from "../profiles/profile.repository.js";
 import type { CareerPageFetcher } from "../watch-checker/career-page-fetcher.js";
+import { InMemoryDiscoverySourceRepository } from "./discovery-source.repository.js";
 import { ProfileDiscoveryService } from "./profile-discovery.service.js";
 import type { DiscoverySource } from "./source-registry.js";
 
@@ -18,7 +19,7 @@ const source: DiscoverySource = {
 };
 
 describe("profile discovery service", () => {
-  it("stores only profile-eligible platform jobs", async () => {
+  it("stores the shared source pool but returns only profile-eligible jobs", async () => {
     const profileRepository = new InMemoryProfileRepository();
     const jobRepository = new InMemoryJobRepository();
     const userId = "user_1";
@@ -57,17 +58,19 @@ describe("profile discovery service", () => {
         ];
       }
     };
-    const service = new ProfileDiscoveryService(profileRepository, jobRepository, fetcher, [source]);
+    const sourceRepository = new InMemoryDiscoverySourceRepository([source]);
+    const service = new ProfileDiscoveryService(profileRepository, jobRepository, fetcher, sourceRepository, []);
 
     const summary = await service.discoverForProfile(userId, profile.id);
     const storedJobs = await jobRepository.findAll();
 
     assert.equal(summary.checked, 1);
     assert.equal(summary.created, 1);
+    assert.equal(summary.globallyCreated, 2);
     assert.equal(summary.skippedIneligible, 1);
     assert.equal(summary.sources[0]?.stored, 1);
-    assert.equal(storedJobs.length, 1);
-    assert.equal(storedJobs[0]?.title, "Backend Engineer New Grad");
+    assert.equal(storedJobs.length, 2);
+    assert.equal(summary.jobs[0]?.title, "Backend Engineer New Grad");
   });
 
   it("continues when one discovery source fails", async () => {
@@ -110,7 +113,13 @@ describe("profile discovery service", () => {
         ];
       }
     };
-    const service = new ProfileDiscoveryService(profileRepository, jobRepository, fetcher, [source, secondSource]);
+    const service = new ProfileDiscoveryService(
+      profileRepository,
+      jobRepository,
+      fetcher,
+      new InMemoryDiscoverySourceRepository([source, secondSource]),
+      []
+    );
 
     const summary = await service.discoverForProfile(userId, profile.id);
 
@@ -155,7 +164,13 @@ describe("profile discovery service", () => {
         return [];
       }
     };
-    const service = new ProfileDiscoveryService(profileRepository, jobRepository, fetcher, sources);
+    const service = new ProfileDiscoveryService(
+      profileRepository,
+      jobRepository,
+      fetcher,
+      new InMemoryDiscoverySourceRepository(sources),
+      []
+    );
 
     const summary = await service.discoverForProfile(userId, profile.id);
 

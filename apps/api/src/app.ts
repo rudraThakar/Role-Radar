@@ -9,6 +9,10 @@ import { PrismaCompanyWatchRepository, type CompanyWatchRepository } from "./com
 import { createCompanyWatchRouter } from "./company-watches/company-watch.routes.js";
 import { CompanyWatchService } from "./company-watches/company-watch.service.js";
 import { createProfileDiscoveryRouter } from "./discovery/profile-discovery.routes.js";
+import {
+  PrismaDiscoverySourceRepository,
+  type DiscoverySourceRepository
+} from "./discovery/discovery-source.repository.js";
 import { ProfileDiscoveryService } from "./discovery/profile-discovery.service.js";
 import { PrismaNotificationRepository, type NotificationRepository } from "./notifications/notification.repository.js";
 import { createNotificationRouter } from "./notifications/notification.routes.js";
@@ -50,6 +54,7 @@ export interface AppDependencies {
   notificationRepository?: NotificationRepository;
   userRepository?: UserRepository;
   careerPageFetcher?: CareerPageFetcher;
+  discoverySourceRepository?: DiscoverySourceRepository;
   readinessCheck?: () => Promise<void>;
   jwtSecret?: string;
 }
@@ -66,6 +71,8 @@ export function createApp(dependencies: AppDependencies = {}): Express {
   const resumeRepository = dependencies.resumeRepository ?? new PrismaResumeRepository(prisma);
   const resumeFileStorage = dependencies.resumeFileStorage ?? createResumeFileStorageFromEnv();
   const careerPageFetcher = dependencies.careerPageFetcher ?? new PlatformCareerPageFetcher();
+  const discoverySourceRepository =
+    dependencies.discoverySourceRepository ?? new PrismaDiscoverySourceRepository(prisma);
   const readinessCheck = dependencies.readinessCheck ?? checkDatabaseReadiness;
   const authService = new AuthService(
     userRepository,
@@ -85,7 +92,8 @@ export function createApp(dependencies: AppDependencies = {}): Express {
   const profileDiscoveryService = new ProfileDiscoveryService(
     profileRepository,
     jobRepository,
-    careerPageFetcher
+    careerPageFetcher,
+    discoverySourceRepository
   );
   const jobIngestionService = new JobIngestionService(profileRepository, jobRepository);
   const jobService = new JobService(jobRepository);

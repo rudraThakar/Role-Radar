@@ -1,4 +1,4 @@
-import type { CareerProfile, ProfileDomain } from "@roleradar/domain";
+import type { ProfileDomain } from "@roleradar/domain";
 
 export type DiscoveryProvider = "GREENHOUSE" | "LEVER" | "ASHBY" | "WORKDAY" | "HTML";
 
@@ -138,29 +138,131 @@ export const defaultDiscoverySources: DiscoverySource[] = [
     domains: ["SOFTWARE"],
     locations: ["Remote", "USA"],
     roleKeywords: ["software", "backend", "frontend", "product", "platform"]
+  },
+  {
+    id: "openai-ashby",
+    companyName: "OpenAI",
+    careersUrl: "https://jobs.ashbyhq.com/openai",
+    provider: "ASHBY",
+    domains: ["SOFTWARE", "DATA_ML", "RESEARCH", "DIGITAL_HARDWARE"],
+    locations: [],
+    roleKeywords: ["software", "systems", "research", "machine learning", "hardware"]
+  },
+  {
+    id: "stripe-greenhouse",
+    companyName: "Stripe",
+    careersUrl: "https://boards.greenhouse.io/stripe",
+    provider: "GREENHOUSE",
+    domains: ["SOFTWARE", "DATA_ML"],
+    locations: ["Bengaluru", "Remote"],
+    roleKeywords: ["software", "backend", "frontend", "infrastructure", "data"]
+  },
+  {
+    id: "figma-greenhouse",
+    companyName: "Figma",
+    careersUrl: "https://boards.greenhouse.io/figma",
+    provider: "GREENHOUSE",
+    domains: ["SOFTWARE", "DATA_ML"],
+    locations: ["Remote"],
+    roleKeywords: ["software", "backend", "frontend", "product", "data"]
+  },
+  {
+    id: "anduril-greenhouse",
+    companyName: "Anduril",
+    careersUrl: "https://boards.greenhouse.io/andurilindustries",
+    provider: "GREENHOUSE",
+    domains: ["SOFTWARE", "DIGITAL_HARDWARE", "EMBEDDED", "MECHANICAL", "RESEARCH"],
+    locations: [],
+    roleKeywords: ["software", "hardware", "embedded", "mechanical", "manufacturing", "systems"]
+  },
+  {
+    id: "scale-ai-greenhouse",
+    companyName: "Scale AI",
+    careersUrl: "https://boards.greenhouse.io/scaleai",
+    provider: "GREENHOUSE",
+    domains: ["SOFTWARE", "DATA_ML", "RESEARCH"],
+    locations: [],
+    roleKeywords: ["software", "machine learning", "research", "data", "infrastructure"]
+  },
+  {
+    id: "3pillar-lever",
+    companyName: "3Pillar",
+    careersUrl: "https://jobs.lever.co/3pillarglobal",
+    provider: "LEVER",
+    domains: ["SOFTWARE", "DATA_ML"],
+    locations: ["India", "Remote"],
+    roleKeywords: ["software", "backend", "frontend", "data", "cloud"]
+  },
+  {
+    id: "drivetrain-lever",
+    companyName: "Drivetrain",
+    careersUrl: "https://jobs.lever.co/drivetrain",
+    provider: "LEVER",
+    domains: ["SOFTWARE", "DATA_ML"],
+    locations: ["India", "Remote"],
+    roleKeywords: ["software", "backend", "frontend", "data", "intern"]
+  },
+  {
+    id: "safe-security-lever",
+    companyName: "Safe Security",
+    careersUrl: "https://jobs.lever.co/safe",
+    provider: "LEVER",
+    domains: ["SOFTWARE", "DATA_ML"],
+    locations: ["Bengaluru", "New Delhi"],
+    roleKeywords: ["software", "backend", "security", "ai", "sdet"]
+  },
+  {
+    id: "highlevel-lever",
+    companyName: "HighLevel",
+    careersUrl: "https://jobs.lever.co/gohighlevel",
+    provider: "LEVER",
+    domains: ["SOFTWARE", "DATA_ML"],
+    locations: ["India", "Remote"],
+    roleKeywords: ["software", "backend", "frontend", "platform", "ai"]
+  },
+  {
+    id: "keyloop-lever",
+    companyName: "Keyloop",
+    careersUrl: "https://jobs.lever.co/keyloop",
+    provider: "LEVER",
+    domains: ["SOFTWARE", "DATA_ML"],
+    locations: ["Hyderabad", "India"],
+    roleKeywords: ["software", "backend", "frontend", "data", "cloud"]
+  },
+  {
+    id: "extreme-networks-lever",
+    companyName: "Extreme Networks",
+    careersUrl: "https://jobs.lever.co/extremenetworks",
+    provider: "LEVER",
+    domains: ["SOFTWARE", "EMBEDDED", "DIGITAL_HARDWARE", "DATA_ML"],
+    locations: ["Bengaluru", "Chennai", "India"],
+    roleKeywords: ["software", "systems", "network", "embedded", "hardware", "ai"]
+  },
+  {
+    id: "saviynt-lever",
+    companyName: "Saviynt",
+    careersUrl: "https://jobs.lever.co/saviynt",
+    provider: "LEVER",
+    domains: ["SOFTWARE", "DATA_ML"],
+    locations: ["Bengaluru", "India"],
+    roleKeywords: ["software", "platform", "security", "cloud", "data"]
+  },
+  {
+    id: "olsson-greenhouse",
+    companyName: "Olsson",
+    careersUrl: "https://boards.greenhouse.io/olsson",
+    provider: "GREENHOUSE",
+    domains: ["MECHANICAL", "CIVIL"],
+    locations: ["USA"],
+    roleKeywords: ["mechanical", "civil", "structural", "water", "construction"]
+  },
+  {
+    id: "aurecon-workday",
+    companyName: "Aurecon",
+    careersUrl: "https://aurecongroup.wd3.myworkdayjobs.com/aurecon",
+    provider: "WORKDAY",
+    domains: ["MECHANICAL", "CIVIL", "SOFTWARE", "DATA_ML"],
+    locations: [],
+    roleKeywords: ["mechanical", "civil", "structural", "transport", "water", "digital"]
   }
 ];
-
-export function selectDiscoverySources(profile: CareerProfile, sources: DiscoverySource[]): DiscoverySource[] {
-  const excludedCompanies = profile.excludedCompanies.map(normalizeText);
-
-  return sources.filter((source) => {
-    const normalizedCompany = normalizeText(source.companyName);
-    if (excludedCompanies.includes(normalizedCompany)) {
-      return false;
-    }
-
-    // Platform metadata is intentionally not used as a gate. A company can post
-    // any domain on the same ATS board; each fetched job is classified and
-    // strictly matched against the active profile before it is stored.
-    return true;
-  });
-}
-
-function normalizeText(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9+#.]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}

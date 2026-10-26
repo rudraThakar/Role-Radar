@@ -7,11 +7,8 @@ import type { ProfileRepository } from "../profiles/profile.repository.js";
 import { isStrictProfileMatch } from "../recommendations/recommendation.service.js";
 import { HttpError } from "../shared/http-error.js";
 import type { CareerPageFetcher } from "../watch-checker/career-page-fetcher.js";
-import {
-  defaultDiscoverySources,
-  selectDiscoverySources,
-  type DiscoverySource
-} from "./source-registry.js";
+import type { DiscoverySourceRepository } from "./discovery-source.repository.js";
+import { defaultDiscoverySources, type DiscoverySource } from "./source-registry.js";
 
 export interface ProfileDiscoverySummary {
   checked: number;
@@ -20,6 +17,8 @@ export interface ProfileDiscoverySummary {
   updated: number;
   skippedIneligible: number;
   failed: number;
+  globallyCreated: number;
+  globallyUpdated: number;
   jobs: CanonicalJob[];
   sources: ProfileDiscoverySourceResult[];
 }
@@ -29,18 +28,33 @@ export interface ProfileDiscoverySourceResult {
   companyName: string;
   provider: string;
   fetched: number;
+  normalized: number;
   stored: number;
+  created: number;
+  updated: number;
   skippedIneligible: number;
   failed: boolean;
+  failedPostings: number;
   error?: string;
+}
+
+interface DiscoveredJob {
+  job: CanonicalJob;
+  created: boolean;
 }
 
 interface SourceDiscoveryOutcome {
   result: ProfileDiscoverySourceResult;
+  jobs: DiscoveredJob[];
+}
+
+export interface GlobalDiscoverySummary {
+  checked: number;
   created: number;
   updated: number;
-  skippedIneligible: number;
-  jobs: CanonicalJob[];
+  failed: number;
+  jobs: DiscoveredJob[];
+  sources: ProfileDiscoverySourceResult[];
 }
 
 const sourceConcurrency = 4;
@@ -50,38 +64,61 @@ export class ProfileDiscoveryService {
     private readonly profileRepository: ProfileRepository,
     private readonly jobRepository: JobRepository,
     private readonly careerPageFetcher: CareerPageFetcher,
-    private readonly sources: DiscoverySource[] = defaultDiscoverySources
+    private readonly sourceRepository: DiscoverySourceRepository,
+    private readonly bootstrapSources: DiscoverySource[] = defaultDiscoverySources
   ) {}
 
   async discoverForProfile(userId: string, profileId: string): Promise<ProfileDiscoverySummary> {
     const profile = await this.profileRepository.findById(userId, profileId);
-    if (profile === null) {
-      throw new HttpError(404, "Profile not found");
-    }
+    if (profile === null) throw new HttpError(404, "Profile not found");
 
-    const selectedSources = selectDiscoverySources(profile, this.sources);
-    const summary: ProfileDiscoverySummary = {
+    const globalSummary = await this.discoverAllSources();
+    const matchingJobs = globalSummary.jobs.filter(({ job }) => isProfileMatch(job, profile));
+    const matchingIds = new Set(matchingJobs.map(({ job }) => job.id));
+
+    return {
+      checked: globalSummary.checked,
+      skippedSources: 0,
+      created: matchingJobs.filter((item) => item.created).length,
+      updated: matchingJobs.filter((item) => !item.created).length,
+      skippedIneligible: globalSummary.jobs.length - matchingJobs.length,
+      failed: globalSummary.failed,
+      globallyCreated: globalSummary.created,
+      globallyUpdated: globalSummary.updated,
+      jobs: matchingJobs.map(({ job }) => job),
+      sources: globalSummary.sources.map((source) => {
+        const sourceJobs = globalSummary.jobs.filter(
+          ({ job }) => matchingIds.has(job.id) && normalizeText(job.companyName) === normalizeText(source.companyName)
+        );
+        return {
+          ...source,
+          stored: sourceJobs.length,
+          skippedIneligible: Math.max(0, source.normalized - sourceJobs.length)
+        };
+      })
+    };
+  }
+
+  async discoverAllSources(): Promise<GlobalDiscoverySummary> {
+    await this.sourceRepository.ensureSources(this.bootstrapSources);
+    const sources = await this.sourceRepository.findActive();
+    const summary: GlobalDiscoverySummary = {
       checked: 0,
-      skippedSources: this.sources.length - selectedSources.length,
       created: 0,
       updated: 0,
-      skippedIneligible: 0,
       failed: 0,
       jobs: [],
       sources: []
     };
 
-    for (let offset = 0; offset < selectedSources.length; offset += sourceConcurrency) {
-      const sourceBatch = selectedSources.slice(offset, offset + sourceConcurrency);
+    for (let offset = 0; offset < sources.length; offset += sourceConcurrency) {
       const outcomes = await Promise.all(
-        sourceBatch.map((source) => this.discoverSource(userId, profileId, source, profile))
+        sources.slice(offset, offset + sourceConcurrency).map((source) => this.discoverSource(source))
       );
-
       for (const outcome of outcomes) {
         summary.checked += 1;
-        summary.created += outcome.created;
-        summary.updated += outcome.updated;
-        summary.skippedIneligible += outcome.skippedIneligible;
+        summary.created += outcome.result.created;
+        summary.updated += outcome.result.updated;
         summary.failed += outcome.result.failed ? 1 : 0;
         summary.jobs.push(...outcome.jobs);
         summary.sources.push(outcome.result);
@@ -91,76 +128,77 @@ export class ProfileDiscoveryService {
     return summary;
   }
 
-  private async discoverSource(
-    userId: string,
-    profileId: string,
-    source: DiscoverySource,
-    profile: CareerProfile
-  ): Promise<SourceDiscoveryOutcome> {
-      const sourceResult: ProfileDiscoverySourceResult = {
-        sourceId: source.id,
-        companyName: source.companyName,
-        provider: source.provider,
-        fetched: 0,
-        stored: 0,
-        skippedIneligible: 0,
-        failed: false
-      };
-      const outcome: SourceDiscoveryOutcome = {
-        result: sourceResult,
-        created: 0,
-        updated: 0,
-        skippedIneligible: 0,
-        jobs: []
-      };
+  private async discoverSource(source: DiscoverySource): Promise<SourceDiscoveryOutcome> {
+    const startedAt = new Date();
+    const result: ProfileDiscoverySourceResult = {
+      sourceId: source.id,
+      companyName: source.companyName,
+      provider: source.provider,
+      fetched: 0,
+      normalized: 0,
+      stored: 0,
+      created: 0,
+      updated: 0,
+      skippedIneligible: 0,
+      failed: false,
+      failedPostings: 0
+    };
+    const jobs: DiscoveredJob[] = [];
 
-      try {
-        const rawJobs = await this.careerPageFetcher.fetchJobs(toCompanyWatch(userId, profileId, source));
-        sourceResult.fetched = rawJobs.length;
+    try {
+      const rawJobs = await this.careerPageFetcher.fetchJobs(toCompanyWatch(source));
+      result.fetched = rawJobs.length;
 
-        for (const rawJob of rawJobs) {
-          const normalizedJob = normalizeRawJobPosting(rawJob);
-          const candidateJob: CanonicalJob = {
-            id: "candidate",
-            ...normalizedJob,
-            evidence: []
-          };
-          const recommendation = buildRecommendation(candidateJob, profile);
-
-          if (recommendation.eligibility === "INELIGIBLE" || !isStrictProfileMatch(candidateJob, profile)) {
-            outcome.skippedIneligible += 1;
-            sourceResult.skippedIneligible += 1;
-            continue;
-          }
-
-          const result = await this.jobRepository.upsertBySourceUrl(normalizedJob);
-          if (result.created) {
-            outcome.created += 1;
-          } else {
-            outcome.updated += 1;
-          }
-
-          sourceResult.stored += 1;
-          outcome.jobs.push(result.job);
+      for (const rawJob of rawJobs) {
+        try {
+          const persisted = await this.jobRepository.upsertBySourceUrl(normalizeRawJobPosting(rawJob));
+          result.normalized += 1;
+          result.stored += 1;
+          if (persisted.created) result.created += 1;
+          else result.updated += 1;
+          jobs.push(persisted);
+        } catch {
+          result.failedPostings += 1;
         }
-      } catch (error) {
-        sourceResult.failed = true;
-        sourceResult.error = error instanceof Error ? error.message : "Unknown discovery error";
       }
+    } catch (error) {
+      result.failed = true;
+      result.error = error instanceof Error ? error.message : "Unknown discovery error";
+    }
 
-      return outcome;
+    await this.sourceRepository.recordRun(source.id, startedAt, new Date(), {
+      fetched: result.fetched,
+      normalized: result.normalized,
+      created: result.created,
+      updated: result.updated,
+      failed: result.failedPostings + (result.failed ? 1 : 0),
+      ...(result.error === undefined ? {} : { error: result.error })
+    });
+    return { result, jobs };
   }
 }
 
-function toCompanyWatch(userId: string, profileId: string, source: DiscoverySource): CompanyWatch {
+function isProfileMatch(job: CanonicalJob, profile: CareerProfile): boolean {
+  if (profile.excludedCompanies.some((company) => normalizeText(company) === normalizeText(job.companyName))) {
+    return false;
+  }
+  const recommendation = buildRecommendation(job, profile);
+  return recommendation.eligibility !== "INELIGIBLE" && isStrictProfileMatch(job, profile);
+}
+
+function toCompanyWatch(source: DiscoverySource): CompanyWatch {
   return {
     id: source.id,
-    userId,
-    profileId,
+    userId: "system",
+    profileId: "global",
     companyName: source.companyName,
     careersUrl: source.careersUrl,
     checkCadenceDays: 1,
     isActive: true,
     createdAt: new Date()
   };
+}
+
+function normalizeText(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9+#.]+/g, " ").replace(/\s+/g, " ").trim();
 }

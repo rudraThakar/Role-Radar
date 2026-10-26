@@ -10,7 +10,9 @@ const defaultFetchTimeoutMs = 12_000;
 const defaultFetchAttempts = 3;
 const initialRetryDelayMs = 200;
 const workdayPageSize = 20;
-const maximumWorkdayPages = 5;
+// Workday exposes no board-wide export. A generous bounded loop prevents the
+// previous first-100-jobs blind spot while still protecting scheduled runs.
+const maximumWorkdayPages = 25;
 const workdayDetailConcurrency = 5;
 
 interface CareerPlatformAdapter {
@@ -343,7 +345,7 @@ function looksLikeJobLink(title: string, href: string): boolean {
     return false;
   }
 
-  return /\b(engineer|developer|software|backend|frontend|rtl|verification|embedded|intern|graduate|job|opening|role)\b/.test(text);
+  return /\b(engineer|developer|software|backend|frontend|rtl|verification|embedded|mechanical|civil|structural|manufacturing|design|quality|intern|graduate|job|opening|role)\b/.test(text);
 }
 
 function stripTags(html: string): string {
