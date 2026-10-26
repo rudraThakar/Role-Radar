@@ -105,15 +105,21 @@ export interface DiscoverySummary {
   updated: number;
   skippedIneligible: number;
   failed: number;
+  globallyCreated: number;
+  globallyUpdated: number;
   jobs: Job[];
   sources: Array<{
     sourceId: string;
     companyName: string;
     provider: string;
     fetched: number;
+    normalized: number;
     stored: number;
+    created: number;
+    updated: number;
     skippedIneligible: number;
     failed: boolean;
+    failedPostings: number;
     error?: string;
   }>;
 }

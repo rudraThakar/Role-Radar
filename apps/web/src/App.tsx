@@ -1477,15 +1477,15 @@ export function App(): JSX.Element {
             <div className="discovery-callout">
               <div>
                 <p className="eyebrow">Platform discovery</p>
-                <h3>Find matching jobs from ATS boards</h3>
+                <h3>Update the shared jobs catalog</h3>
                 <p>
-                  Searches curated Greenhouse, Lever, Ashby, and Workday sources for this profile before storing only
-                  eligible or possibly eligible jobs.
+                  Scans active Greenhouse, Lever, Ashby, Workday, and career-page sources once. Jobs enter the shared
+                  catalog, then RoleRadar applies this profile's role, domain, experience, and location rules.
                 </p>
               </div>
               <button className="primary-button" disabled={isLoading} onClick={() => void handleDiscoverProfileJobs()} type="button">
                 <Radar size={15} aria-hidden="true" />
-                Discover jobs
+                Scan job sources
               </button>
             </div>
 
@@ -1496,17 +1496,18 @@ export function App(): JSX.Element {
                   <span>
                     Checked {lastDiscoverySummary.checked} source{lastDiscoverySummary.checked === 1 ? "" : "s"}.
                     {" "}
-                    {lastDiscoverySummary.created} new and {lastDiscoverySummary.updated} updated job
+                    {lastDiscoverySummary.created} new and {lastDiscoverySummary.updated} updated match
                     {lastDiscoverySummary.created + lastDiscoverySummary.updated === 1 ? "" : "s"}.
                     {" "}
-                    {lastDiscoverySummary.skippedIneligible} skipped by profile filters.
+                    {lastDiscoverySummary.globallyCreated} new posting
+                    {lastDiscoverySummary.globallyCreated === 1 ? "" : "s"} added globally; {lastDiscoverySummary.skippedIneligible} did not match this profile.
                     {lastDiscoverySummary.failed === 0 ? "" : ` ${lastDiscoverySummary.failed} failed.`}
                   </span>
                 </div>
                 <div className="source-result-list">
                   {lastDiscoverySummary.sources.map((source) => (
                     <span className={source.failed ? "source-result source-result-failed" : "source-result"} key={source.sourceId}>
-                      {source.companyName}: {source.stored}/{source.fetched}
+                      {source.companyName}: {source.stored} matched · {source.normalized}/{source.fetched} ingested
                     </span>
                   ))}
                 </div>
