@@ -12,7 +12,7 @@ concurrency:
 jobs:
   discover:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - name: Trigger matching-job discovery
         env:
@@ -21,12 +21,44 @@ jobs:
         run: |
           test -n "$API_BASE_URL"
           test -n "$CRON_SECRET"
-          curl --fail --silent --show-error \
-            --retry 3 \
-            --retry-all-errors \
-            --retry-delay 5 \
+          response=$(curl --fail-with-body --silent --show-error \
             --connect-timeout 20 \
-            --max-time 900 \
+            --max-time 60 \
             --request POST \
             --header "x-cron-secret: $CRON_SECRET" \
-            "$API_BASE_URL/api/v1/internal/schedules/discovery"
+            "$API_BASE_URL/api/v1/internal/schedules/discovery")
+
+          run_id=$(printf '%s' "$response" | jq -er '.data.runId')
+          echo "Scheduled discovery run: $run_id"
+
+          for attempt in $(seq 1 120); do
+            status_response=$(curl --fail-with-body --silent --show-error \
+              --connect-timeout 20 \
+              --max-time 60 \
+              --header "x-cron-secret: $CRON_SECRET" \
+              "$API_BASE_URL/api/v1/internal/schedules/discovery/$run_id")
+            status=$(printf '%s' "$status_response" | jq -er '.data.status')
+
+            case "$status" in
+              COMPLETED)
+                printf '%s\n' "$status_response" | jq .
+                exit 0
+                ;;
+              FAILED)
+                printf '%s\n' "$status_response" | jq .
+                exit 1
+                ;;
+              RUNNING)
+                echo "Scan still running (poll $attempt/120)"
+                sleep 20
+                ;;
+              *)
+                echo "Unexpected scheduled discovery status: $status"
+                printf '%s\n' "$status_response"
+                exit 1
+                ;;
+            esac
+          done
+
+          echo "Scheduled discovery did not finish within 40 minutes"
+          exit 1
