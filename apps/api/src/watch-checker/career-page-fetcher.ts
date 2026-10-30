@@ -9,6 +9,7 @@ type FetchLike = typeof fetch;
 const defaultFetchTimeoutMs = 12_000;
 const defaultFetchAttempts = 3;
 const initialRetryDelayMs = 200;
+const maximumJsonResponseBytes = 8 * 1024 * 1024;
 const workdayPageSize = 20;
 // Workday responses are enriched with full descriptions. Keep the newest 200
 // postings bounded so one large tenant cannot exhaust a small worker instance.
@@ -84,12 +85,14 @@ class GreenhouseAdapter implements CareerPlatformAdapter {
     const boardToken = extractGreenhouseBoardToken(watch.careersUrl);
     if (boardToken === undefined) return [];
 
-    const response = await this.fetcher(`https://boards-api.greenhouse.io/v1/boards/${boardToken}/jobs?content=true`);
+    // The default listing excludes full descriptions. Requesting content=true
+    // can produce a single response large enough to exhaust a small instance.
+    const response = await this.fetcher(`https://boards-api.greenhouse.io/v1/boards/${boardToken}/jobs`);
     if (!response.ok) {
       throw new Error(`Greenhouse returned ${response.status}`);
     }
 
-    const payload = (await response.json()) as GreenhouseJobsResponse;
+    const payload = await readBoundedJsonResponse<GreenhouseJobsResponse>(response, "Greenhouse");
     return (payload.jobs ?? []).map((job) =>
       withOptionalPublishedAt(
         {
@@ -124,7 +127,7 @@ class LeverAdapter implements CareerPlatformAdapter {
       throw new Error(`Lever returned ${response.status}`);
     }
 
-    const postings = (await response.json()) as LeverPosting[];
+    const postings = await readBoundedJsonResponse<LeverPosting[]>(response, "Lever");
     return postings.map((posting) =>
       withOptionalPublishedAt(
         {
@@ -159,7 +162,7 @@ class AshbyAdapter implements CareerPlatformAdapter {
       throw new Error(`Ashby returned ${response.status}`);
     }
 
-    const payload = (await response.json()) as AshbyJobBoardResponse;
+    const payload = await readBoundedJsonResponse<AshbyJobBoardResponse>(response, "Ashby");
     return (payload.jobs ?? []).map((job) => ({
       companyName: watch.companyName,
       title: job.title,
@@ -212,7 +215,7 @@ class WorkdayAdapter implements CareerPlatformAdapter {
         throw new Error(`Workday returned ${response.status} for ${endpoint}: ${await response.text()}`);
       }
 
-      const payload = (await response.json()) as WorkdayJobsResponse;
+      const payload = await readBoundedJsonResponse<WorkdayJobsResponse>(response, "Workday listing");
       const pagePostings = payload.jobPostings ?? [];
       postings.push(...pagePostings);
       total = payload.total ?? payload.totalHits ?? pagePostings.length + offset;
@@ -240,7 +243,7 @@ class WorkdayAdapter implements CareerPlatformAdapter {
       });
       if (!response.ok) return fallback;
 
-      const payload = (await response.json()) as WorkdayJobDetailResponse;
+      const payload = await readBoundedJsonResponse<WorkdayJobDetailResponse>(response, "Workday detail");
       const detail = payload.jobPostingInfo;
       if (detail === undefined) return fallback;
 
@@ -492,6 +495,59 @@ function withTimeout(fetcher: FetchLike, timeoutMs: number): FetchLike {
       clearTimeout(timeout);
     }
   };
+}
+
+export async function readBoundedJsonResponse<T>(
+  response: Response,
+  sourceName: string,
+  maximumBytes = maximumJsonResponseBytes
+): Promise<T> {
+  const contentLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > maximumBytes) {
+    await response.body?.cancel();
+    throw responseTooLargeError(sourceName, maximumBytes);
+  }
+
+  if (response.body === null) {
+    const text = await response.text();
+    if (new TextEncoder().encode(text).byteLength > maximumBytes) {
+      throw responseTooLargeError(sourceName, maximumBytes);
+    }
+    return JSON.parse(text) as T;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > maximumBytes) {
+        await reader.cancel();
+        throw responseTooLargeError(sourceName, maximumBytes);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  return JSON.parse(new TextDecoder().decode(bytes)) as T;
+}
+
+function responseTooLargeError(sourceName: string, maximumBytes: number): Error {
+  const maximumMegabytes = Math.floor(maximumBytes / (1024 * 1024));
+  return new Error(`${sourceName} response exceeds the ${maximumMegabytes} MB safety limit`);
 }
 
 function withRetry(fetcher: FetchLike, maximumAttempts: number, initialDelayMs: number): FetchLike {

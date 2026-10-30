@@ -133,6 +133,7 @@ export class ProfileDiscoveryService {
 
   private async discoverSource(source: DiscoverySource, profile?: CareerProfile): Promise<SourceDiscoveryOutcome> {
     const startedAt = new Date();
+    console.info(`[discovery] source=${source.id} provider=${source.provider} status=started`);
     const result: ProfileDiscoverySourceResult = {
       sourceId: source.id,
       companyName: source.companyName,
@@ -171,6 +172,9 @@ export class ProfileDiscoveryService {
     } catch (error) {
       result.failed = true;
       result.error = error instanceof Error ? error.message : "Unknown discovery error";
+      console.error(
+        `[discovery] source=${source.id} provider=${source.provider} status=failed error=${result.error}`
+      );
     }
 
     await this.sourceRepository.recordRun(source.id, startedAt, new Date(), {
@@ -181,6 +185,11 @@ export class ProfileDiscoveryService {
       failed: result.failedPostings + (result.failed ? 1 : 0),
       ...(result.error === undefined ? {} : { error: result.error })
     });
+    if (!result.failed) {
+      console.info(
+        `[discovery] source=${source.id} provider=${source.provider} status=completed fetched=${result.fetched} stored=${result.stored}`
+      );
+    }
     return { result, jobs };
   }
 }

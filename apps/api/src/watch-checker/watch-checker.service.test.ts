@@ -3,7 +3,12 @@ import { describe, it } from "node:test";
 
 import { InMemoryCompanyWatchRepository } from "../company-watches/company-watch.repository.js";
 import { InMemoryJobRepository } from "../jobs/job.repository.js";
-import { extractJobLinks, PlatformCareerPageFetcher, type CareerPageFetcher } from "./career-page-fetcher.js";
+import {
+  extractJobLinks,
+  PlatformCareerPageFetcher,
+  readBoundedJsonResponse,
+  type CareerPageFetcher
+} from "./career-page-fetcher.js";
 import { WatchCheckerService } from "./watch-checker.service.js";
 
 describe("career page fetcher", () => {
@@ -54,7 +59,7 @@ describe("career page fetcher", () => {
 
   it("fetches Greenhouse jobs through the board API", async () => {
     const fetcher = new PlatformCareerPageFetcher(async (url) => {
-      assert.equal(String(url), "https://boards-api.greenhouse.io/v1/boards/exampleco/jobs?content=true");
+      assert.equal(String(url), "https://boards-api.greenhouse.io/v1/boards/exampleco/jobs");
       return jsonResponse({
         jobs: [
           {
@@ -81,6 +86,15 @@ describe("career page fetcher", () => {
 
     assert.equal(jobs[0]?.title, "Backend Engineer");
     assert.deepEqual(jobs[0]?.locations, ["Bengaluru"]);
+  });
+
+  it("rejects oversized ATS responses before parsing them", async () => {
+    const response = new Response(JSON.stringify({ jobs: [{ title: "A very large posting" }] }));
+
+    await assert.rejects(
+      readBoundedJsonResponse(response, "Test ATS", 20),
+      /Test ATS response exceeds the .* safety limit/
+    );
   });
 
   it("fetches Lever jobs through the postings API", async () => {
@@ -383,14 +397,8 @@ describe("watch checker service", () => {
 });
 
 function jsonResponse(payload: unknown): Response {
-  return {
-    ok: true,
+  return new Response(JSON.stringify(payload), {
     status: 200,
-    async json() {
-      return payload;
-    },
-    async text() {
-      return JSON.stringify(payload);
-    }
-  } as Response;
+    headers: { "content-type": "application/json" }
+  });
 }
