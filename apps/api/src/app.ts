@@ -57,6 +57,7 @@ export interface AppDependencies {
   discoverySourceRepository?: DiscoverySourceRepository;
   readinessCheck?: () => Promise<void>;
   jwtSecret?: string;
+  cronSecret?: string;
 }
 
 export function createApp(dependencies: AppDependencies = {}): Express {
@@ -151,7 +152,10 @@ export function createApp(dependencies: AppDependencies = {}): Express {
   app.use("/api/v1/profiles/:profileId/discovery", createProfileDiscoveryRouter(profileDiscoveryService, authenticate));
   app.use("/api/v1/profiles/:profileId/ingestion", createJobIngestionRouter(jobIngestionService, authenticate));
   app.use("/api/v1/profiles", createProfileRouter(profileService, authenticate));
-  app.use("/api/v1/internal/schedules", createScheduledDiscoveryRouter(scheduledDiscoveryService, process.env.CRON_SECRET));
+  app.use(
+    "/api/v1/internal/schedules",
+    createScheduledDiscoveryRouter(scheduledDiscoveryService, dependencies.cronSecret ?? process.env.CRON_SECRET)
+  );
   app.use(errorHandler);
 
   return app;

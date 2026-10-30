@@ -53,6 +53,7 @@ const discoverySourceRepository = new InMemoryDiscoverySourceRepository([
 
 const app = createApp({
   careerPageFetcher,
+  cronSecret: "e2e-cron-secret",
   discoverySourceRepository,
   companyWatchRepository: new InMemoryCompanyWatchRepository(),
   jobRepository: new InMemoryJobRepository(),
@@ -181,6 +182,20 @@ test("core user journey works through the HTTP API", async () => {
   assert.equal(applicationList.body.data.length, 1);
   assert.equal(applicationList.body.data[0]?.applicationStage, "INTERVIEWING");
   assert.equal(applicationList.body.data[0]?.applicationNotes, "Technical screen scheduled");
+
+  const scheduledRun = await request<{ data: { runId: string; status: string } }>(
+    "/api/v1/internal/schedules/discovery",
+    {
+      method: "POST",
+      headers: { "x-cron-secret": "e2e-cron-secret" }
+    }
+  );
+  assert.equal(scheduledRun.status, 202);
+  assert.equal(scheduledRun.body.data.status, "RUNNING");
+
+  const completedRun = await waitForScheduledRun(scheduledRun.body.data.runId);
+  assert.equal(completedRun.status, "COMPLETED");
+  assert.equal(completedRun.summary?.profilesChecked, 1);
 });
 
 interface AuthResult {
@@ -193,9 +208,10 @@ interface AuthResult {
 
 async function request<TBody>(
   path: string,
-  options: { method?: string; accessToken?: string; body?: unknown } = {}
+  options: { method?: string; accessToken?: string; body?: unknown; headers?: Record<string, string> } = {}
 ): Promise<{ status: number; body: TBody }> {
   const headers = new Headers();
+  for (const [name, value] of Object.entries(options.headers ?? {})) headers.set(name, value);
   if (options.body !== undefined) headers.set("content-type", "application/json");
   if (options.accessToken !== undefined) headers.set("authorization", `Bearer ${options.accessToken}`);
 
@@ -206,4 +222,19 @@ async function request<TBody>(
   });
   const body = (await response.json()) as TBody;
   return { status: response.status, body };
+}
+
+async function waitForScheduledRun(
+  runId: string
+): Promise<{ status: string; summary?: { profilesChecked: number } }> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const response = await request<{
+      data: { status: string; summary?: { profilesChecked: number } };
+    }>(`/api/v1/internal/schedules/discovery/${runId}`, {
+      headers: { "x-cron-secret": "e2e-cron-secret" }
+    });
+    if (response.body.data.status !== "RUNNING") return response.body.data;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("Scheduled discovery did not complete during the test");
 }

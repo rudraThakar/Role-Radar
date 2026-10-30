@@ -10,6 +10,7 @@ export function createScheduledDiscoveryRouter(
 ): Router {
   const router = Router();
   const controller = new ScheduledDiscoveryController(scheduledDiscoveryService, cronSecret);
-  router.post("/discovery", asyncHandler(controller.run.bind(controller)));
+  router.post("/discovery", asyncHandler(controller.start.bind(controller)));
+  router.get("/discovery/:runId", asyncHandler(controller.status.bind(controller)));
   return router;
 }
