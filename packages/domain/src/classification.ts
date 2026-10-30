@@ -106,7 +106,29 @@ const domainSignals: Record<ProfileDomain, string[]> = {
     "geotechnical",
     "quantity surveyor",
     "transportation engineering"
-  ]
+  ],
+  ELECTRICAL: [
+    "electrical",
+    "electronics",
+    "power electronics",
+    "power systems",
+    "pcb",
+    "analog",
+    "circuit",
+    "substation",
+    "instrumentation",
+    "control systems",
+    "hardware engineer"
+  ],
+  PRODUCT: ["product manager", "product management", "product owner", "program manager", "technical program manager", "product analyst"],
+  DESIGN: ["designer", "ux", "ui design", "product design", "graphic design", "visual design", "user experience", "brand design", "motion design"],
+  MARKETING: ["marketing", "growth", "seo", "content", "brand", "communications", "social media", "demand generation", "copywriter", "public relations"],
+  SALES: ["sales", "account executive", "business development", "account manager", "solutions engineer", "sales engineer", "customer success", "partnerships"],
+  FINANCE: ["finance", "financial", "accountant", "accounting", "audit", "tax", "treasury", "controller", "investment", "fp&a", "risk analyst", "underwriter", "banking"],
+  HUMAN_RESOURCES: ["recruiter", "recruiting", "talent acquisition", "human resources", "hr business partner", "people operations", "people partner", "compensation", "payroll"],
+  OPERATIONS: ["operations", "supply chain", "logistics", "procurement", "business operations", "program operations", "strategy", "project manager", "business analyst", "planner"],
+  CUSTOMER_SUPPORT: ["customer support", "support engineer", "technical support", "customer service", "support specialist", "customer experience", "help desk"],
+  GENERAL: []
 };
 
 export interface DomainClassification {

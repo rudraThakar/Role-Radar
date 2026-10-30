@@ -72,7 +72,25 @@ import {
 
 const tabs = ["ALL", "SAVED", "APPLIED", "HIDDEN"] as const;
 const workspaceViews = ["JOBS", "PROFILE", "SOURCES"] as const;
-const profileDomains = ["SOFTWARE", "DIGITAL_HARDWARE", "EMBEDDED", "DATA_ML", "RESEARCH", "MECHANICAL", "CIVIL"] as const;
+const profileDomains = [
+  "SOFTWARE",
+  "DIGITAL_HARDWARE",
+  "EMBEDDED",
+  "DATA_ML",
+  "RESEARCH",
+  "MECHANICAL",
+  "CIVIL",
+  "ELECTRICAL",
+  "PRODUCT",
+  "DESIGN",
+  "MARKETING",
+  "SALES",
+  "FINANCE",
+  "HUMAN_RESOURCES",
+  "OPERATIONS",
+  "CUSTOMER_SUPPORT",
+  "GENERAL"
+] as const;
 const workModes = ["ONSITE", "HYBRID", "REMOTE"] as const;
 const employmentTypes = ["FULL_TIME", "INTERNSHIP", "CONTRACT", "PART_TIME"] as const;
 const seniorityFilters = ["FRESHER", "ENTRY_LEVEL", "MID_LEVEL", "SENIOR"] as const;
@@ -103,6 +121,7 @@ type JobFilters = {
   location: string;
   seniority: string;
   workMode: string;
+  companyType: string;
 };
 type CompanyWatchFormState = {
   companyName: string;
@@ -152,6 +171,10 @@ export function App(): JSX.Element {
   const [auth, setAuth] = useState<AuthResult | null>(null);
   const [profiles, setProfiles] = useState<CareerProfile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
+  const [visibleLimit, setVisibleLimit] = useState(50);
+  const recommendationRequestRef = useRef(0);
+  const selectedProfileRef = useRef<string | null>(null);
+  const feedCacheRef = useRef(new Map<string, { recommendations: Recommendation[]; stateRecords: JobStateRecord[] }>());
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [companyWatches, setCompanyWatches] = useState<CompanyWatch[]>([]);
   const [companyWatchForm, setCompanyWatchForm] = useState<CompanyWatchFormState>(emptyCompanyWatchForm);
@@ -169,6 +192,7 @@ export function App(): JSX.Element {
   const [profileForm, setProfileForm] = useState<ProfileFormState>(emptyProfileForm);
   const [isCreatingProfile, setIsCreatingProfile] = useState(false);
   const [jobFilters, setJobFilters] = useState<JobFilters>({
+    companyType: "",
     domain: "",
     location: "",
     seniority: "",
@@ -181,6 +205,7 @@ export function App(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const googleButtonRef = useRef<HTMLDivElement | null>(null);
 
+  selectedProfileRef.current = selectedProfileId;
   const selectedProfile = useMemo(
     () => profiles.find((profile) => profile.id === selectedProfileId) ?? null,
     [profiles, selectedProfileId]
@@ -299,6 +324,7 @@ export function App(): JSX.Element {
     localStorage.removeItem(authStorageKey);
     localStorage.removeItem(refreshStorageKey);
     setAuth(null);
+    feedCacheRef.current.clear();
     setProfiles([]);
     setSelectedProfileId(null);
     setRecommendations([]);
@@ -328,21 +354,38 @@ export function App(): JSX.Element {
   async function refreshRecommendations(profileId: string): Promise<void> {
     if (auth === null) return;
 
-    setIsLoading(true);
+    // Only the most recent request may write state; otherwise a slow response
+    // for the previously selected profile overwrites the one now on screen.
+    const requestId = recommendationRequestRef.current + 1;
+    recommendationRequestRef.current = requestId;
+    const tab = activeTab;
+    const cacheKey = `${profileId}:${tab}`;
+    const cached = feedCacheRef.current.get(cacheKey);
+
+    if (cached === undefined) {
+      setRecommendations([]);
+      setStateRecords([]);
+      setIsLoading(true);
+    } else {
+      setRecommendations(cached.recommendations);
+      setStateRecords(cached.stateRecords);
+    }
     setError(null);
 
     try {
-      if (activeTab === "ALL") {
-        setRecommendations(await listRecommendations(auth.accessToken, profileId));
-        setStateRecords([]);
-      } else {
-        setStateRecords(await listJobStates(auth.accessToken, profileId, activeTab));
-        setRecommendations([]);
-      }
+      const next =
+        tab === "ALL"
+          ? { recommendations: await listRecommendations(auth.accessToken, profileId), stateRecords: [] as JobStateRecord[] }
+          : { recommendations: [] as Recommendation[], stateRecords: await listJobStates(auth.accessToken, profileId, tab) };
+      feedCacheRef.current.set(cacheKey, next);
+      if (recommendationRequestRef.current !== requestId) return;
+      setRecommendations(next.recommendations);
+      setStateRecords(next.stateRecords);
     } catch (caughtError) {
+      if (recommendationRequestRef.current !== requestId) return;
       setError(caughtError instanceof Error ? caughtError.message : "Could not load recommendations");
     } finally {
-      setIsLoading(false);
+      if (recommendationRequestRef.current === requestId) setIsLoading(false);
     }
   }
 
@@ -361,6 +404,7 @@ export function App(): JSX.Element {
 
     try {
       const nextResumes = await listResumes(auth.accessToken, profileId);
+      if (selectedProfileRef.current !== profileId) return;
       const nextActiveResume = nextResumes.find((resume) => resume.isActive) ?? null;
       setResumes(nextResumes);
       if (nextActiveResume?.extractionStatus === "COMPLETED") {
@@ -383,7 +427,8 @@ export function App(): JSX.Element {
     if (auth === null) return;
 
     try {
-      setCompanyWatches(await listCompanyWatches(auth.accessToken, profileId));
+      const nextWatches = await listCompanyWatches(auth.accessToken, profileId);
+      if (selectedProfileRef.current === profileId) setCompanyWatches(nextWatches);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Could not load company watches");
     }
@@ -687,6 +732,10 @@ export function App(): JSX.Element {
   }
 
   useEffect(() => {
+    setVisibleLimit(50);
+  }, [selectedProfileId, activeTab, jobFilters]);
+
+  useEffect(() => {
     if (selectedProfileId !== null) {
       void refreshRecommendations(selectedProfileId);
       void refreshResumes(selectedProfileId);
@@ -698,7 +747,7 @@ export function App(): JSX.Element {
     if (selectedProfile !== null && !isCreatingProfile) {
       setProfileForm(toProfileFormState(selectedProfile));
       setSelectedResumeFile(null);
-      setJobFilters({ domain: "", location: "", seniority: "", workMode: "" });
+      setJobFilters({ domain: "", location: "", seniority: "", workMode: "", companyType: "" });
     }
   }, [selectedProfile, isCreatingProfile]);
 
@@ -1697,6 +1746,17 @@ export function App(): JSX.Element {
                 </select>
               </label>
               <label>
+                Company type
+                <select
+                  value={jobFilters.companyType}
+                  onChange={(event) => setJobFilters((current) => ({ ...current, companyType: event.target.value }))}
+                >
+                  <option value="">Any</option>
+                  <option value="STARTUP">Funded startups</option>
+                  <option value="ESTABLISHED">Established companies</option>
+                </select>
+              </label>
+              <label>
                 Seniority
                 <select
                   value={jobFilters.seniority}
@@ -1712,7 +1772,7 @@ export function App(): JSX.Element {
               </label>
               <button
                 className="secondary-button"
-                onClick={() => setJobFilters({ domain: "", location: "", seniority: "", workMode: "" })}
+                onClick={() => setJobFilters({ domain: "", location: "", seniority: "", workMode: "", companyType: "" })}
                 type="button"
               >
                 Clear
@@ -1733,7 +1793,7 @@ export function App(): JSX.Element {
                 <p>Try clearing a filter or widening the profile locations.</p>
               </section>
             )}
-            {filteredDisplayItems.map((item) => {
+            {filteredDisplayItems.slice(0, visibleLimit).map((item) => {
               const recommendation = item.kind === "recommendation" ? item.recommendation : null;
               const job = item.kind === "recommendation" ? item.recommendation.job : item.stateRecord.job;
               const state = item.kind === "recommendation" ? item.recommendation.state : item.stateRecord.state;
@@ -1756,6 +1816,7 @@ export function App(): JSX.Element {
                 </div>
 
                 <div className="job-meta">
+                  {job.companyStage === "STARTUP" && <span>Startup</span>}
                   <span>{formatDomain(job.seniority)}</span>
                   <span>{formatDomain(job.workMode)}</span>
                   {recommendation !== null && <span>{formatDomain(recommendation.eligibility)}</span>}
@@ -1874,6 +1935,15 @@ export function App(): JSX.Element {
               </article>
               );
             })}
+            {filteredDisplayItems.length > visibleLimit && (
+              <button
+                className="secondary-button"
+                onClick={() => setVisibleLimit((current) => current + 50)}
+                type="button"
+              >
+                Show more ({filteredDisplayItems.length - visibleLimit} remaining)
+              </button>
+            )}
           </section>
         ) : null}
       </section>
@@ -1935,7 +2005,9 @@ function matchesJobFilters(job: Job, filters: JobFilters): boolean {
     matchesLocation &&
     (filters.domain.length === 0 || job.domains.includes(filters.domain)) &&
     (filters.seniority.length === 0 || job.seniority === filters.seniority) &&
-    (filters.workMode.length === 0 || job.workMode === filters.workMode)
+    (filters.workMode.length === 0 || job.workMode === filters.workMode) &&
+    (filters.companyType.length === 0 ||
+      (filters.companyType === "STARTUP" ? job.companyStage === "STARTUP" : job.companyStage !== "STARTUP"))
   );
 }
 

@@ -137,6 +137,7 @@ export interface UserNotification {
 export interface Job {
   id: string;
   companyName: string;
+  companyStage?: "STARTUP" | "ESTABLISHED";
   title: string;
   description: string;
   employmentType: string;

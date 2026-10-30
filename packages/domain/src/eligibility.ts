@@ -106,7 +106,7 @@ export function evaluateEligibility(job: CanonicalJob, profile: CareerProfile): 
 
   if (job.domains.includes(profile.domain)) {
     reasons.push(`Job domain matches ${profile.domain}`);
-  } else if (job.domains.length > 0) {
+  } else if (job.domains.length > 0 && profile.domain !== "GENERAL") {
     gaps.push(`Job is classified as ${job.domains.join(", ")}, not ${profile.domain}`);
   }
 

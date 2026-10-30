@@ -29,10 +29,24 @@ export const profileDomains = [
   "DATA_ML",
   "RESEARCH",
   "MECHANICAL",
-  "CIVIL"
+  "CIVIL",
+  "ELECTRICAL",
+  "PRODUCT",
+  "DESIGN",
+  "MARKETING",
+  "SALES",
+  "FINANCE",
+  "HUMAN_RESOURCES",
+  "OPERATIONS",
+  "CUSTOMER_SUPPORT",
+  "GENERAL"
 ] as const;
 
 export type ProfileDomain = (typeof profileDomains)[number];
+
+export const companyStages = ["STARTUP", "ESTABLISHED"] as const;
+
+export type CompanyStage = (typeof companyStages)[number];
 
 export interface Evidence {
   field: string;
@@ -44,6 +58,7 @@ export interface Evidence {
 export interface CanonicalJob {
   id: string;
   companyName: string;
+  companyStage?: CompanyStage;
   title: string;
   normalizedTitle: string;
   description: string;
