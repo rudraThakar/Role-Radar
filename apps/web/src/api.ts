@@ -381,13 +381,38 @@ export async function checkCompanyWatches(accessToken: string, profileId: string
   return response.data;
 }
 
+interface DiscoveryRun {
+  runId: string;
+  status: "RUNNING" | "COMPLETED" | "FAILED";
+  summary?: DiscoverySummary;
+  error?: string;
+}
+
+const discoveryPollIntervalMs = 4_000;
+const discoveryMaximumWaitMs = 25 * 60 * 1000;
+
 export async function discoverProfileJobs(accessToken: string, profileId: string): Promise<DiscoverySummary> {
-  const response = await apiRequest<{ data: DiscoverySummary }>(`/api/v1/profiles/${profileId}/discovery/check-now`, {
+  const started = await apiRequest<{ data: DiscoveryRun }>(`/api/v1/profiles/${profileId}/discovery/runs`, {
     method: "POST",
     accessToken
   });
 
-  return response.data;
+  const deadline = Date.now() + discoveryMaximumWaitMs;
+  let run = started.data;
+  while (run.status === "RUNNING") {
+    if (Date.now() > deadline) throw new Error("The scan is taking longer than expected. Check back in a few minutes.");
+    await new Promise((resolve) => setTimeout(resolve, discoveryPollIntervalMs));
+    run = (
+      await apiRequest<{ data: DiscoveryRun }>(`/api/v1/profiles/${profileId}/discovery/runs/${run.runId}`, {
+        accessToken
+      })
+    ).data;
+  }
+
+  if (run.status === "FAILED" || run.summary === undefined) {
+    throw new Error(run.error ?? "Job scan failed");
+  }
+  return run.summary;
 }
 
 export async function listNotifications(accessToken: string): Promise<UserNotification[]> {
@@ -466,7 +491,7 @@ async function apiRequest<TResponse>(
     headers.set("authorization", `Bearer ${options.accessToken}`);
   }
 
-  const response = await fetch(toApiUrl(path), {
+  const response = await resilientFetch(toApiUrl(path), {
     ...options,
     headers
   });
@@ -491,7 +516,7 @@ async function uploadRequest<TResponse>(
   const headers = new Headers(options.headers);
   headers.set("authorization", `Bearer ${options.accessToken}`);
 
-  const response = await fetch(toApiUrl(path), {
+  const response = await resilientFetch(toApiUrl(path), {
     ...options,
     headers
   });
@@ -507,6 +532,31 @@ async function uploadRequest<TResponse>(
   }
 
   return json as TResponse;
+}
+
+// The free API tier sleeps when idle and takes up to a minute to wake. Network
+// level failures ("Failed to fetch") on reads are retried so the first visit
+// succeeds instead of showing an error.
+async function resilientFetch(url: string, init: RequestInit): Promise<Response> {
+  const isRead = (init.method ?? "GET").toUpperCase() === "GET";
+  const attempts = isRead ? 4 : 1;
+
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await fetch(url, init);
+    } catch {
+      if (attempt >= attempts) {
+        throw new Error(
+          "Cannot reach the RoleRadar server. It may be waking up - wait a few seconds and try again."
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2_000 * attempt));
+    }
+  }
+}
+
+export function warmUpApi(): void {
+  void fetch(toApiUrl("/health")).catch(() => undefined);
 }
 
 function toApiUrl(path: string): string {
