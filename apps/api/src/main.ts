@@ -10,6 +10,17 @@ const server = app.listen(port, () => {
   console.log(`RoleRadar API listening on port ${port}`);
 });
 
+// A single failed background scan must never take the API down for everyone.
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled promise rejection", reason);
+});
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught exception", error);
+});
+
+server.keepAliveTimeout = 65_000;
+server.headersTimeout = 66_000;
+
 let isShuttingDown = false;
 
 function shutDown(signal: string): void {

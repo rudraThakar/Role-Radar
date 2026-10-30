@@ -11,10 +11,12 @@ const defaultFetchAttempts = 3;
 const initialRetryDelayMs = 200;
 const maximumJsonResponseBytes = 8 * 1024 * 1024;
 const workdayPageSize = 20;
-// Workday responses are enriched with full descriptions. Keep the newest 200
-// postings bounded so one large tenant cannot exhaust a small worker instance.
-const maximumWorkdayPages = 10;
+// Listings are cheap (titles only). Page deep, then fetch full descriptions
+// only for postings whose title looks relevant, which bounds memory.
+const maximumWorkdayPages = 60;
+const maximumWorkdayDetails = 250;
 const workdayDetailConcurrency = 5;
+const detailConcurrency = 5;
 
 interface CareerPlatformAdapter {
   readonly name: string;
@@ -85,27 +87,42 @@ class GreenhouseAdapter implements CareerPlatformAdapter {
     const boardToken = extractGreenhouseBoardToken(watch.careersUrl);
     if (boardToken === undefined) return [];
 
-    // The default listing excludes full descriptions. Requesting content=true
-    // can produce a single response large enough to exhaust a small instance.
+    // The listing excludes descriptions and content=true can be huge, so list
+    // first, keep only plausibly relevant titles, then fetch each description
+    // (needed to read experience requirements) with small concurrency.
     const response = await this.fetcher(`https://boards-api.greenhouse.io/v1/boards/${boardToken}/jobs`);
     if (!response.ok) {
       throw new Error(`Greenhouse returned ${response.status}`);
     }
 
     const payload = await readBoundedJsonResponse<GreenhouseJobsResponse>(response, "Greenhouse");
-    return (payload.jobs ?? []).map((job) =>
-      withOptionalPublishedAt(
+    const relevant = (payload.jobs ?? []).filter((job) => isRelevantJobTitle(job.title));
+
+    return mapWithConcurrency(relevant, detailConcurrency, async (job) => {
+      let content = job.content;
+      if (content === undefined && job.id !== undefined) {
+        try {
+          const detail = await this.fetcher(`https://boards-api.greenhouse.io/v1/boards/${boardToken}/jobs/${job.id}`);
+          if (detail.ok) {
+            content = (await readBoundedJsonResponse<{ content?: string }>(detail, "Greenhouse detail")).content;
+          }
+        } catch {
+          // Fall back to the title-only description below.
+        }
+      }
+
+      return withOptionalPublishedAt(
         {
           companyName: watch.companyName,
           title: job.title,
-          description: textFromHtml(job.content ?? `${job.title} listed on ${watch.companyName}.`),
+          description: textFromHtml(decodeEntities(content ?? `${job.title} listed on ${watch.companyName}.`)),
           sourceUrl: job.absolute_url,
           applyUrl: job.absolute_url,
           locations: job.location?.name === undefined ? [] : [job.location.name]
         },
         job.updated_at === undefined ? undefined : new Date(job.updated_at)
-      )
-    );
+      );
+    });
   }
 }
 
@@ -218,7 +235,9 @@ class WorkdayAdapter implements CareerPlatformAdapter {
       const payload = await readBoundedJsonResponse<WorkdayJobsResponse>(response, "Workday listing");
       const pagePostings = payload.jobPostings ?? [];
       postings.push(...pagePostings);
-      total = payload.total ?? payload.totalHits ?? pagePostings.length + offset;
+      // Workday only reports the real total on the first page; later pages
+      // return 0, which would otherwise end paging after two requests.
+      if (page === 0) total = payload.total ?? payload.totalHits ?? pagePostings.length;
       offset += pagePostings.length;
 
       if (pagePostings.length < workdayPageSize) {
@@ -226,7 +245,8 @@ class WorkdayAdapter implements CareerPlatformAdapter {
       }
     }
 
-    const jobs = await mapWithConcurrency(postings, workdayDetailConcurrency, (posting) =>
+    const relevantPostings = postings.filter((posting) => isRelevantJobTitle(posting.title)).slice(0, maximumWorkdayDetails);
+    const jobs = await mapWithConcurrency(relevantPostings, workdayDetailConcurrency, (posting) =>
       this.fetchDetailedJob(watch, posting)
     );
     return deduplicateJobsBySourceUrl(jobs);
@@ -349,6 +369,22 @@ function looksLikeJobLink(title: string, href: string): boolean {
   }
 
   return /\b(engineer|developer|software|backend|frontend|rtl|verification|embedded|mechanical|civil|structural|manufacturing|design|quality|intern|graduate|job|opening|role)\b/.test(text);
+}
+
+const relevantTitlePattern =
+  /\b(engineer|engineering|developer|software|sde|swe|programmer|architect|devops|sre|data|machine learning|ml|ai|scientist|analyst|designer|design|verification|validation|rtl|asic|fpga|vlsi|soc|silicon|firmware|embedded|hardware|digital|mechanical|civil|structural|manufacturing|quality|test|intern|graduate|trainee|researcher|research|technician|cad|hvac|electrical|electronics|site|construction|geotechnical|infrastructure|platform|security|backend|frontend|full[ -]?stack)\b/i;
+
+export function isRelevantJobTitle(title: string): boolean {
+  return relevantTitlePattern.test(title);
+}
+
+function decodeEntities(html: string): string {
+  return html
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
 }
 
 function stripTags(html: string): string {
@@ -618,6 +654,7 @@ function firstPathSegment(url: URL): string | undefined {
 
 interface GreenhouseJobsResponse {
   jobs?: Array<{
+    id?: number;
     title: string;
     absolute_url: string;
     content?: string;

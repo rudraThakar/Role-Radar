@@ -1,10 +1,11 @@
-import { buildJobFingerprint, canonicalizeJobUrl, type CanonicalJob } from "@roleradar/domain";
+import { buildJobFingerprint, canonicalizeJobUrl, type CanonicalJob, type ProfileDomain } from "@roleradar/domain";
 import type { ProfileDomain as PrismaProfileDomain, PrismaClient } from "@prisma/client";
 
 import type { CreateJobInput } from "./job.dto.js";
 
 export interface JobRepository {
   findAll(): Promise<CanonicalJob[]>;
+  findByDomain(domain: ProfileDomain): Promise<CanonicalJob[]>;
   findById(jobId: string): Promise<CanonicalJob | null>;
   create(input: CreateJobInput): Promise<CanonicalJob>;
   upsertBySourceUrl(input: CreateJobInput): Promise<{ job: CanonicalJob; created: boolean }>;
@@ -18,6 +19,10 @@ export class InMemoryJobRepository implements JobRepository {
   async findAll(): Promise<CanonicalJob[]> {
     const now = Date.now();
     return [...this.jobs.values()].filter((job) => job.expiresAt === undefined || job.expiresAt.getTime() > now);
+  }
+
+  async findByDomain(domain: ProfileDomain): Promise<CanonicalJob[]> {
+    return (await this.findAll()).filter((job) => job.domains.includes(domain));
   }
 
   async findById(jobId: string): Promise<CanonicalJob | null> {
@@ -81,7 +86,24 @@ export class PrismaJobRepository implements JobRepository {
           { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] }
         ]
       },
-      orderBy: { discoveredAt: "desc" }
+      orderBy: { discoveredAt: "desc" },
+      take: 5000
+    });
+
+    return jobs.map(toCanonicalJob).filter((job) => isLikelyRealJobSourceUrl(job.sourceUrl));
+  }
+
+  async findByDomain(domain: ProfileDomain): Promise<CanonicalJob[]> {
+    const jobs = await this.prisma.job.findMany({
+      where: {
+        domains: { has: domain as PrismaProfileDomain },
+        AND: [
+          { sourceUrl: { not: { startsWith: "https://jobs.example.local/" } } },
+          { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] }
+        ]
+      },
+      orderBy: { discoveredAt: "desc" },
+      take: 5000
     });
 
     return jobs.map(toCanonicalJob).filter((job) => isLikelyRealJobSourceUrl(job.sourceUrl));
@@ -140,6 +162,8 @@ export class PrismaJobRepository implements JobRepository {
       where: { id: existingJob.id },
       data: {
         ...toPrismaJobWriteInput(toCreateJobInput(mergedInput)),
+        minimumExperienceMonths: normalizedInput.minimumExperienceMonths ?? null,
+        maximumExperienceMonths: normalizedInput.maximumExperienceMonths ?? null,
         discoveredAt: existingJob.discoveredAt,
         expiresAt: null
       }
@@ -175,7 +199,9 @@ function mergeJob(existing: CanonicalJob, incoming: CreateJobInput): CanonicalJo
     ...incoming,
     id: existing.id,
     description: incoming.description.length >= existing.description.length ? incoming.description : existing.description,
-    domains: unique([...existing.domains, ...incoming.domains]),
+    // Classification and experience come from the latest posting text so
+    // improved rules replace stale values instead of accumulating them.
+    domains: incoming.domains,
     skills: unique([...existing.skills, ...incoming.skills]),
     locations: unique([...existing.locations, ...incoming.locations]),
     sourceUrl: useIncomingUrl ? incoming.sourceUrl : existing.sourceUrl,

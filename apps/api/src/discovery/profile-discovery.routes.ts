@@ -12,6 +12,8 @@ export function createProfileDiscoveryRouter(
   const controller = new ProfileDiscoveryController(profileDiscoveryService);
 
   router.use(authenticate);
+  router.post("/runs", asyncHandler(controller.start.bind(controller)));
+  router.get("/runs/:runId", asyncHandler(controller.status.bind(controller)));
   router.post("/check-now", asyncHandler(controller.checkNow.bind(controller)));
 
   return router;

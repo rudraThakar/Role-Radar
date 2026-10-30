@@ -21,7 +21,7 @@ export function normalizeRawJobPosting(rawJob: RawJobPostingInput): CreateJobInp
     description: rawJob.description,
     skills
   });
-  const experience = inferExperienceRange(sourceText.toLowerCase());
+  const experience = inferExperienceRange(sourceText);
 
   const input: CreateJobInput = {
     companyName: rawJob.companyName,
@@ -60,16 +60,29 @@ function inferSeniority(title: string, text: string, experience: ExperienceRange
 
   // Title signals are stronger than incidental wording in a description such
   // as "work with senior engineers" or "mentor junior engineers".
-  if (/\b(senior|sr\.?|staff|principal|lead)\b/.test(normalizedTitle)) return "SENIOR";
-  if (/\b(fresher|new grad|graduate)\b/.test(normalizedTitle)) return "FRESHER";
-  if (/\b(entry level|junior|associate)\b/.test(normalizedTitle)) return "ENTRY_LEVEL";
+  if (
+    /\b(senior|sr|staff|principal|lead|manager|director|head of|architect|distinguished|fellow|vp|vice president)\b/.test(
+      normalizedTitle
+    )
+  ) {
+    return "SENIOR";
+  }
+  if (/\b(iii|iv|v|3|4|5)$/.test(normalizedTitle) && /\b(engineer|developer|sde|designer|analyst|scientist)\b/.test(normalizedTitle)) {
+    return "SENIOR";
+  }
+  if (/\b(ii|2)$/.test(normalizedTitle) && /\b(engineer|developer|sde|designer|analyst|scientist)\b/.test(normalizedTitle)) {
+    return "MID_LEVEL";
+  }
+  if (/\b(fresher|new grad|new graduate|graduate|campus|university|intern|trainee)\b/.test(normalizedTitle)) return "FRESHER";
+  if (/\b(entry level|junior|jr|associate|early career)\b/.test(normalizedTitle)) return "ENTRY_LEVEL";
 
   if (experience.minimumMonths === 0) return "ENTRY_LEVEL";
+  if (experience.minimumMonths !== undefined && experience.minimumMonths >= 60) return "SENIOR";
   if (experience.minimumMonths !== undefined && experience.minimumMonths >= 24) return "MID_LEVEL";
-  if (/\b(senior|staff|principal)\b/.test(text)) return "SENIOR";
-  if (/\b(fresher|new grad|graduate)\b/.test(text)) return "FRESHER";
-  if (/\b(entry level|entry-level|junior)\b/.test(text)) return "ENTRY_LEVEL";
-  return seniorityLevels.includes("MID_LEVEL") ? "MID_LEVEL" : "UNKNOWN";
+  if (experience.minimumMonths !== undefined) return "ENTRY_LEVEL";
+  if (/\b(fresher|new grad|new graduate|entry level|entry-level|early career)\b/.test(text)) return "FRESHER";
+  // No evidence either way: do not invent a level.
+  return seniorityLevels.includes("UNKNOWN") ? "UNKNOWN" : "MID_LEVEL";
 }
 
 interface ExperienceRange {
@@ -77,43 +90,77 @@ interface ExperienceRange {
   maximumMonths?: number;
 }
 
-function inferExperienceRange(text: string): ExperienceRange {
-  const yearRange = text.match(/\b(\d+)\s*(?:-|–|—|to)\s*(\d+)\+?\s*(?:years?|yrs?)\b/);
-  if (yearRange?.[1] !== undefined && yearRange[2] !== undefined) {
-    return {
-      minimumMonths: Number(yearRange[1]) * 12,
-      maximumMonths: Number(yearRange[2]) * 12
-    };
+const numberWords: Record<string, number> = {
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  twelve: 12,
+  fifteen: 15
+};
+const numberToken = `\\d+(?:\\.\\d+)?|${Object.keys(numberWords).join("|")}`;
+const durationPattern = new RegExp(
+  `(?<![\\w.])(${numberToken})\\s*(?:\\+|\\(\\+\\)|or more|or above)?\\s*(?:(?:-|–|—|to)\\s*(${numberToken})\\s*\\+?\\s*)?(years?|yrs?|months?)\\b`,
+  "g"
+);
+const experienceContext = /\b(experience|experienced|exp|expertise|background|track record|hands[ -]on|proven|working|worked|professional|industry)\b/;
+const nonRequirementContext = /\b(founded|since|anniversary|history|ago|old|in business|of innovation|of growth|of excellence|of leadership|warranty|lifespan|contract|term|tenure|bond|probation)\b/;
+const nonRequirementPrefix = /\b(within|in the (?:next|last|past)|over the (?:next|last|past)|last|past|next|first|every|after|than|under|less than)\s*$/;
+const optionalSectionMarker = /\b(preferred|nice to have|good to have|bonus|desirable|ideally|a plus|is a plus|would be a plus)\b/;
+
+export function inferExperienceRange(sourceText: string): ExperienceRange {
+  const text = sourceText.toLowerCase().replace(/\s+/g, " ");
+  const optionalIndex = text.search(optionalSectionMarker);
+  // Anything after "preferred qualifications" is not a hard requirement.
+  const requiredText = optionalIndex > 200 ? text.slice(0, optionalIndex) : text;
+
+  let minimumMonths: number | undefined;
+  let maximumMonths: number | undefined;
+
+  for (const match of requiredText.matchAll(durationPattern)) {
+    const start = match.index ?? 0;
+    const end = start + match[0].length;
+    const before = requiredText.slice(Math.max(0, start - 80), start);
+    const after = requiredText.slice(end, end + 80);
+    const around = `${before} ${match[0]} ${after}`;
+
+    if (nonRequirementPrefix.test(before.slice(-25)) || nonRequirementContext.test(around)) continue;
+    if (!experienceContext.test(around)) continue;
+
+    const unitMonths = match[3]?.startsWith("m") === true ? 1 : 12;
+    const low = parseNumber(match[1]);
+    const high = parseNumber(match[2]);
+    if (low === undefined) continue;
+
+    const lowMonths = Math.round(low * unitMonths);
+    if (minimumMonths === undefined || lowMonths > minimumMonths) {
+      minimumMonths = lowMonths;
+      maximumMonths = high === undefined ? undefined : Math.round(high * unitMonths);
+    }
   }
 
-  const monthRange = text.match(/\b(\d+)\s*(?:-|–|—|to)\s*(\d+)\+?\s*months?\b/);
-  if (monthRange?.[1] !== undefined && monthRange[2] !== undefined) {
-    return {
-      minimumMonths: Number(monthRange[1]),
-      maximumMonths: Number(monthRange[2])
-    };
+  if (minimumMonths !== undefined) {
+    return maximumMonths === undefined ? { minimumMonths } : { minimumMonths, maximumMonths };
   }
 
-  const upperBound = text.match(/\b(?:up to|maximum|max)\s+(\d+)\s*(?:years?|yrs?)\b/);
-  if (upperBound?.[1] !== undefined) {
-    return { minimumMonths: 0, maximumMonths: Number(upperBound[1]) * 12 };
-  }
-
-  const minimumYears = text.match(/\b(?:at least|minimum|min)?\s*(\d+)\+?\s*(?:years?|yrs?)\b/);
-  if (minimumYears?.[1] !== undefined) {
-    return { minimumMonths: Number(minimumYears[1]) * 12 };
-  }
-
-  const minimumMonths = text.match(/\b(?:at least|minimum|min)?\s*(\d+)\+?\s*months?\b/);
-  if (minimumMonths?.[1] !== undefined) {
-    return { minimumMonths: Number(minimumMonths[1]) };
-  }
-
-  if (/\b(fresher|new grad|new graduate|entry[ -]level|no experience|required experience:\s*none)\b/.test(text)) {
+  if (/\b(fresher|freshers|new grad|new graduate|entry[ -]level|no experience|no prior experience|zero experience|required experience:\s*none|0\s*(?:-|to)\s*\d+\s*(?:years?|yrs?))\b/.test(text)) {
     return { minimumMonths: 0 };
   }
 
   return {};
+}
+
+function parseNumber(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const asNumber = Number(value);
+  if (Number.isFinite(asNumber)) return asNumber;
+  return numberWords[value];
 }
 
 function inferWorkMode(text: string): WorkMode {

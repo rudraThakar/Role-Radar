@@ -31,7 +31,7 @@ export class RecommendationService {
       throw new HttpError(404, "Profile not found");
     }
 
-    const jobs = await this.jobRepository.findAll();
+    const jobs = await this.jobRepository.findByDomain(profile.domain);
     const stateByJobId = new Map(
       (await this.jobStateRepository.findForProfile(userId, profileId)).map((jobState) => [jobState.jobId, jobState.state])
     );
@@ -69,6 +69,6 @@ export function isStrictProfileMatch(job: CanonicalJob, profile: CareerProfile):
   const jobRoleText = normalizeText(`${job.title} ${job.normalizedTitle}`);
   return profile.preferredRoles.some((role) => {
     const normalizedRole = normalizeText(role);
-    return jobRoleText.includes(normalizedRole) || roleTitleMatchScore(jobRoleText, normalizedRole) >= 0.6;
+    return jobRoleText.includes(normalizedRole) || roleTitleMatchScore(jobRoleText, normalizedRole) >= 0.5;
   });
 }

@@ -34,7 +34,9 @@ function parseAllowedOrigins(rawAllowedOrigins: string | undefined): string[] {
 
   return rawAllowedOrigins
     .split(",")
-    .map((origin) => origin.trim())
+    // A trailing slash is a common config slip and would never equal the
+    // browser's Origin header, silently blocking every request.
+    .map((origin) => origin.trim().replace(/\/+$/, ""))
     .filter((origin) => origin.length > 0);
 }
 

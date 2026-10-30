@@ -266,3 +266,58 @@ export const defaultDiscoverySources: DiscoverySource[] = [
     roleKeywords: ["mechanical", "civil", "structural", "transport", "water", "digital"]
   }
 ];
+
+type CompactSource = [id: string, companyName: string, careersUrl: string, provider: DiscoveryProvider, domains: ProfileDomain[]];
+
+const software: ProfileDomain[] = ["SOFTWARE", "DATA_ML"];
+const hardware: ProfileDomain[] = ["DIGITAL_HARDWARE", "EMBEDDED", "SOFTWARE"];
+
+// Every board below was checked against the provider's public API.
+const additionalSources: CompactSource[] = [
+  ["amat-workday", "Applied Materials", "https://amat.wd1.myworkdayjobs.com/External", "WORKDAY", [...hardware, "MECHANICAL"]],
+  ["broadcom-workday", "Broadcom", "https://broadcom.wd1.myworkdayjobs.com/External_Career", "WORKDAY", [...hardware, "DATA_ML"]],
+  ["marvell-workday", "Marvell", "https://marvell.wd1.myworkdayjobs.com/MarvellCareers", "WORKDAY", [...hardware, "DATA_ML"]],
+  ["nxp-workday", "NXP", "https://nxp.wd3.myworkdayjobs.com/careers", "WORKDAY", [...hardware, "DATA_ML"]],
+  ["adobe-workday", "Adobe", "https://adobe.wd5.myworkdayjobs.com/external_experienced", "WORKDAY", software],
+  ["salesforce-workday", "Salesforce", "https://salesforce.wd12.myworkdayjobs.com/External_Career_Site", "WORKDAY", software],
+  ["mastercard-workday", "Mastercard", "https://mastercard.wd1.myworkdayjobs.com/CorporateCareers", "WORKDAY", software],
+  ["cisco-workday", "Cisco", "https://cisco.wd5.myworkdayjobs.com/Cisco_Careers", "WORKDAY", [...software, "EMBEDDED", "DIGITAL_HARDWARE"]],
+  ["hpe-workday", "Hewlett Packard Enterprise", "https://hpe.wd5.myworkdayjobs.com/Jobsathpe", "WORKDAY", [...software, "EMBEDDED"]],
+  ["groww-greenhouse", "Groww", "https://boards.greenhouse.io/groww", "GREENHOUSE", software],
+  ["airbnb-greenhouse", "Airbnb", "https://boards.greenhouse.io/airbnb", "GREENHOUSE", software],
+  ["coinbase-greenhouse", "Coinbase", "https://boards.greenhouse.io/coinbase", "GREENHOUSE", software],
+  ["datadog-greenhouse", "Datadog", "https://boards.greenhouse.io/datadog", "GREENHOUSE", software],
+  ["gitlab-greenhouse", "GitLab", "https://boards.greenhouse.io/gitlab", "GREENHOUSE", software],
+  ["elastic-greenhouse", "Elastic", "https://boards.greenhouse.io/elastic", "GREENHOUSE", software],
+  ["twilio-greenhouse", "Twilio", "https://boards.greenhouse.io/twilio", "GREENHOUSE", software],
+  ["okta-greenhouse", "Okta", "https://boards.greenhouse.io/okta", "GREENHOUSE", software],
+  ["samsara-greenhouse", "Samsara", "https://boards.greenhouse.io/samsara", "GREENHOUSE", [...software, "EMBEDDED"]],
+  ["toast-greenhouse", "Toast", "https://boards.greenhouse.io/toast", "GREENHOUSE", software],
+  ["robinhood-greenhouse", "Robinhood", "https://boards.greenhouse.io/robinhood", "GREENHOUSE", software],
+  ["instacart-greenhouse", "Instacart", "https://boards.greenhouse.io/instacart", "GREENHOUSE", software],
+  ["lyft-greenhouse", "Lyft", "https://boards.greenhouse.io/lyft", "GREENHOUSE", software],
+  ["pinterest-greenhouse", "Pinterest", "https://boards.greenhouse.io/pinterest", "GREENHOUSE", software],
+  ["reddit-greenhouse", "Reddit", "https://boards.greenhouse.io/reddit", "GREENHOUSE", software],
+  ["discord-greenhouse", "Discord", "https://boards.greenhouse.io/discord", "GREENHOUSE", software],
+  ["asana-greenhouse", "Asana", "https://boards.greenhouse.io/asana", "GREENHOUSE", software],
+  ["dropbox-greenhouse", "Dropbox", "https://boards.greenhouse.io/dropbox", "GREENHOUSE", software],
+  ["roblox-greenhouse", "Roblox", "https://boards.greenhouse.io/roblox", "GREENHOUSE", software],
+  ["vercel-greenhouse", "Vercel", "https://boards.greenhouse.io/vercel", "GREENHOUSE", software],
+  ["glean-greenhouse", "Glean", "https://boards.greenhouse.io/gleanwork", "GREENHOUSE", software],
+  ["sigma-greenhouse", "Sigma Computing", "https://boards.greenhouse.io/sigmacomputing", "GREENHOUSE", software],
+  ["esri-greenhouse", "Esri", "https://boards.greenhouse.io/esri", "GREENHOUSE", ["SOFTWARE", "CIVIL"]],
+  ["cred-lever", "CRED", "https://jobs.lever.co/cred", "LEVER", software],
+  ["zeta-lever", "Zeta", "https://jobs.lever.co/zeta", "LEVER", software],
+  ["palantir-lever", "Palantir", "https://jobs.lever.co/palantir", "LEVER", software],
+  ["notion-ashby", "Notion", "https://jobs.ashbyhq.com/notion", "ASHBY", software],
+  ["ramp-ashby", "Ramp", "https://jobs.ashbyhq.com/ramp", "ASHBY", software],
+  ["deel-ashby", "Deel", "https://jobs.ashbyhq.com/deel", "ASHBY", software],
+  ["cohere-ashby", "Cohere", "https://jobs.ashbyhq.com/cohere", "ASHBY", software],
+  ["perplexity-ashby", "Perplexity", "https://jobs.ashbyhq.com/perplexity", "ASHBY", software]
+];
+
+const knownIds = new Set(defaultDiscoverySources.map((source) => source.id));
+for (const [id, companyName, careersUrl, provider, domains] of additionalSources) {
+  if (knownIds.has(id)) continue;
+  defaultDiscoverySources.push({ id, companyName, careersUrl, provider, domains, locations: [], roleKeywords: [] });
+}

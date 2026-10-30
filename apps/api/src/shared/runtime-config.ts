@@ -20,7 +20,7 @@ export function validateRuntimeEnvironment(environment: NodeJS.ProcessEnv): void
 
   const allowedOrigins = required(environment, "CORS_ORIGIN")
     .split(",")
-    .map((origin) => origin.trim())
+    .map((origin) => origin.trim().replace(/\/+$/, ""))
     .filter((origin) => origin.length > 0);
   if (allowedOrigins.includes("*")) {
     throw new Error("CORS_ORIGIN must list explicit frontend origins");
