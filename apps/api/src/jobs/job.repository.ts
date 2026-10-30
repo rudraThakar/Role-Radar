@@ -162,6 +162,7 @@ export class PrismaJobRepository implements JobRepository {
       where: { id: existingJob.id },
       data: {
         ...toPrismaJobWriteInput(toCreateJobInput(mergedInput)),
+        companyStage: normalizedInput.companyStage ?? existingJob.companyStage,
         minimumExperienceMonths: normalizedInput.minimumExperienceMonths ?? null,
         maximumExperienceMonths: normalizedInput.maximumExperienceMonths ?? null,
         discoveredAt: existingJob.discoveredAt,
@@ -266,6 +267,7 @@ function toCanonicalJob(job: NonNullable<PrismaJob>): CanonicalJob {
     evidence: []
   };
 
+  if (job.companyStage === "STARTUP" || job.companyStage === "ESTABLISHED") canonicalJob.companyStage = job.companyStage;
   if (job.minimumExperienceMonths !== null) canonicalJob.minimumExperienceMonths = job.minimumExperienceMonths;
   if (job.maximumExperienceMonths !== null) canonicalJob.maximumExperienceMonths = job.maximumExperienceMonths;
   if (job.eligibleGraduationYears.length > 0) canonicalJob.eligibleGraduationYears = job.eligibleGraduationYears;

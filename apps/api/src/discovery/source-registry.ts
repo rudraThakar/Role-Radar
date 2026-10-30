@@ -1,4 +1,4 @@
-import type { ProfileDomain } from "@roleradar/domain";
+import type { CompanyStage, ProfileDomain } from "@roleradar/domain";
 
 export type DiscoveryProvider = "GREENHOUSE" | "LEVER" | "ASHBY" | "WORKDAY" | "HTML";
 
@@ -10,6 +10,7 @@ export interface DiscoverySource {
   domains: ProfileDomain[];
   locations: string[];
   roleKeywords: string[];
+  stage?: CompanyStage;
 }
 
 export const defaultDiscoverySources: DiscoverySource[] = [
@@ -267,23 +268,51 @@ export const defaultDiscoverySources: DiscoverySource[] = [
   }
 ];
 
-type CompactSource = [id: string, companyName: string, careersUrl: string, provider: DiscoveryProvider, domains: ProfileDomain[]];
+type CompactSource = [
+  id: string,
+  companyName: string,
+  careersUrl: string,
+  provider: DiscoveryProvider,
+  domains: ProfileDomain[],
+  stage?: CompanyStage
+];
 
-const software: ProfileDomain[] = ["SOFTWARE", "DATA_ML"];
-const hardware: ProfileDomain[] = ["DIGITAL_HARDWARE", "EMBEDDED", "SOFTWARE"];
+const software: ProfileDomain[] = ["SOFTWARE", "DATA_ML", "PRODUCT", "DESIGN"];
+const hardware: ProfileDomain[] = ["DIGITAL_HARDWARE", "EMBEDDED", "ELECTRICAL", "SOFTWARE"];
+const industrial: ProfileDomain[] = ["MECHANICAL", "CIVIL", "ELECTRICAL", "OPERATIONS"];
+const business: ProfileDomain[] = ["FINANCE", "SALES", "MARKETING", "HUMAN_RESOURCES", "OPERATIONS", "PRODUCT", "SOFTWARE", "DATA_ML"];
 
-// Every board below was checked against the provider's public API.
+// Every board below was checked against the provider's public API. Companies
+// marked "STARTUP" are a curated list of venture-backed, growth-stage
+// companies with a strong funding track record, not an automated guess.
 const additionalSources: CompactSource[] = [
+  // Established employers by field
   ["amat-workday", "Applied Materials", "https://amat.wd1.myworkdayjobs.com/External", "WORKDAY", [...hardware, "MECHANICAL"]],
-  ["broadcom-workday", "Broadcom", "https://broadcom.wd1.myworkdayjobs.com/External_Career", "WORKDAY", [...hardware, "DATA_ML"]],
-  ["marvell-workday", "Marvell", "https://marvell.wd1.myworkdayjobs.com/MarvellCareers", "WORKDAY", [...hardware, "DATA_ML"]],
-  ["nxp-workday", "NXP", "https://nxp.wd3.myworkdayjobs.com/careers", "WORKDAY", [...hardware, "DATA_ML"]],
+  ["broadcom-workday", "Broadcom", "https://broadcom.wd1.myworkdayjobs.com/External_Career", "WORKDAY", hardware],
+  ["marvell-workday", "Marvell", "https://marvell.wd1.myworkdayjobs.com/MarvellCareers", "WORKDAY", hardware],
+  ["nxp-workday", "NXP", "https://nxp.wd3.myworkdayjobs.com/careers", "WORKDAY", hardware],
+  ["kla-workday", "KLA", "https://kla.wd1.myworkdayjobs.com/Search", "WORKDAY", [...hardware, "MECHANICAL"]],
   ["adobe-workday", "Adobe", "https://adobe.wd5.myworkdayjobs.com/external_experienced", "WORKDAY", software],
-  ["salesforce-workday", "Salesforce", "https://salesforce.wd12.myworkdayjobs.com/External_Career_Site", "WORKDAY", software],
-  ["mastercard-workday", "Mastercard", "https://mastercard.wd1.myworkdayjobs.com/CorporateCareers", "WORKDAY", software],
-  ["cisco-workday", "Cisco", "https://cisco.wd5.myworkdayjobs.com/Cisco_Careers", "WORKDAY", [...software, "EMBEDDED", "DIGITAL_HARDWARE"]],
+  ["salesforce-workday", "Salesforce", "https://salesforce.wd12.myworkdayjobs.com/External_Career_Site", "WORKDAY", [...software, "SALES"]],
+  ["workday-workday", "Workday", "https://workday.wd5.myworkdayjobs.com/Workday", "WORKDAY", software],
+  ["cisco-workday", "Cisco", "https://cisco.wd5.myworkdayjobs.com/Cisco_Careers", "WORKDAY", [...software, ...hardware]],
   ["hpe-workday", "Hewlett Packard Enterprise", "https://hpe.wd5.myworkdayjobs.com/Jobsathpe", "WORKDAY", [...software, "EMBEDDED"]],
-  ["groww-greenhouse", "Groww", "https://boards.greenhouse.io/groww", "GREENHOUSE", software],
+  ["paypal-workday", "PayPal", "https://paypal.wd1.myworkdayjobs.com/jobs", "WORKDAY", [...software, "FINANCE"]],
+  ["visa-workday", "Visa", "https://visa.wd5.myworkdayjobs.com/Visa", "WORKDAY", [...software, ...business]],
+  ["mastercard-workday", "Mastercard", "https://mastercard.wd1.myworkdayjobs.com/CorporateCareers", "WORKDAY", [...software, ...business]],
+  ["capitalone-workday", "Capital One", "https://capitalone.wd12.myworkdayjobs.com/Capital_One", "WORKDAY", [...software, ...business]],
+  ["citi-workday", "Citi", "https://citi.wd5.myworkdayjobs.com/2", "WORKDAY", business],
+  ["wellsfargo-workday", "Wells Fargo", "https://wf.wd1.myworkdayjobs.com/WellsFargoJobs", "WORKDAY", business],
+  ["blackrock-workday", "BlackRock", "https://blackrock.wd1.myworkdayjobs.com/BlackRock_Professional", "WORKDAY", business],
+  ["pwc-workday", "PwC", "https://pwc.wd3.myworkdayjobs.com/Global_Experienced_Careers", "WORKDAY", business],
+  ["3m-workday", "3M", "https://3m.wd1.myworkdayjobs.com/Search", "WORKDAY", industrial],
+  ["caterpillar-workday", "Caterpillar", "https://cat.wd5.myworkdayjobs.com/CaterpillarCareers", "WORKDAY", industrial],
+  ["gevernova-workday", "GE Vernova", "https://gevernova.wd5.myworkdayjobs.com/Vernova_ExternalSite", "WORKDAY", industrial],
+  ["boeing-workday", "Boeing", "https://boeing.wd1.myworkdayjobs.com/EXTERNAL_CAREERS", "WORKDAY", industrial],
+  ["northrop-workday", "Northrop Grumman", "https://ngc.wd1.myworkdayjobs.com/Northrop_Grumman_External_Site", "WORKDAY", [...industrial, "SOFTWARE"]],
+  ["medtronic-workday", "Medtronic", "https://medtronic.wd1.myworkdayjobs.com/MedtronicCareers", "WORKDAY", [...industrial, "EMBEDDED", "SOFTWARE"]],
+  ["esri-greenhouse", "Esri", "https://boards.greenhouse.io/esri", "GREENHOUSE", ["SOFTWARE", "CIVIL"]],
+  ["airtable-greenhouse", "Airtable", "https://boards.greenhouse.io/airtable", "GREENHOUSE", software],
   ["airbnb-greenhouse", "Airbnb", "https://boards.greenhouse.io/airbnb", "GREENHOUSE", software],
   ["coinbase-greenhouse", "Coinbase", "https://boards.greenhouse.io/coinbase", "GREENHOUSE", software],
   ["datadog-greenhouse", "Datadog", "https://boards.greenhouse.io/datadog", "GREENHOUSE", software],
@@ -302,22 +331,122 @@ const additionalSources: CompactSource[] = [
   ["asana-greenhouse", "Asana", "https://boards.greenhouse.io/asana", "GREENHOUSE", software],
   ["dropbox-greenhouse", "Dropbox", "https://boards.greenhouse.io/dropbox", "GREENHOUSE", software],
   ["roblox-greenhouse", "Roblox", "https://boards.greenhouse.io/roblox", "GREENHOUSE", software],
-  ["vercel-greenhouse", "Vercel", "https://boards.greenhouse.io/vercel", "GREENHOUSE", software],
-  ["glean-greenhouse", "Glean", "https://boards.greenhouse.io/gleanwork", "GREENHOUSE", software],
-  ["sigma-greenhouse", "Sigma Computing", "https://boards.greenhouse.io/sigmacomputing", "GREENHOUSE", software],
-  ["esri-greenhouse", "Esri", "https://boards.greenhouse.io/esri", "GREENHOUSE", ["SOFTWARE", "CIVIL"]],
-  ["cred-lever", "CRED", "https://jobs.lever.co/cred", "LEVER", software],
-  ["zeta-lever", "Zeta", "https://jobs.lever.co/zeta", "LEVER", software],
+  ["zscaler-greenhouse", "Zscaler", "https://boards.greenhouse.io/zscaler", "GREENHOUSE", software],
+  ["netskope-greenhouse", "Netskope", "https://boards.greenhouse.io/netskope", "GREENHOUSE", software],
+  ["rubrik-greenhouse", "Rubrik", "https://boards.greenhouse.io/rubrik", "GREENHOUSE", software],
+  ["sumologic-greenhouse", "Sumo Logic", "https://boards.greenhouse.io/sumologic", "GREENHOUSE", software],
+  ["druva-greenhouse", "Druva", "https://boards.greenhouse.io/druva", "GREENHOUSE", software],
+  ["freshworks-lever", "Freshworks", "https://jobs.lever.co/freshworks", "LEVER", software],
   ["palantir-lever", "Palantir", "https://jobs.lever.co/palantir", "LEVER", software],
-  ["notion-ashby", "Notion", "https://jobs.ashbyhq.com/notion", "ASHBY", software],
-  ["ramp-ashby", "Ramp", "https://jobs.ashbyhq.com/ramp", "ASHBY", software],
-  ["deel-ashby", "Deel", "https://jobs.ashbyhq.com/deel", "ASHBY", software],
-  ["cohere-ashby", "Cohere", "https://jobs.ashbyhq.com/cohere", "ASHBY", software],
-  ["perplexity-ashby", "Perplexity", "https://jobs.ashbyhq.com/perplexity", "ASHBY", software]
+  ["zeta-lever", "Zeta", "https://jobs.lever.co/zeta", "LEVER", software],
+
+  // Startups: venture-backed, growth-stage, actively hiring
+  ["vercel-greenhouse", "Vercel", "https://boards.greenhouse.io/vercel", "GREENHOUSE", software, "STARTUP"],
+  ["glean-greenhouse", "Glean", "https://boards.greenhouse.io/gleanwork", "GREENHOUSE", software, "STARTUP"],
+  ["sigma-greenhouse", "Sigma Computing", "https://boards.greenhouse.io/sigmacomputing", "GREENHOUSE", software, "STARTUP"],
+  ["groww-greenhouse", "Groww", "https://boards.greenhouse.io/groww", "GREENHOUSE", software, "STARTUP"],
+  ["brex-greenhouse", "Brex", "https://boards.greenhouse.io/brex", "GREENHOUSE", [...software, "FINANCE"], "STARTUP"],
+  ["chime-greenhouse", "Chime", "https://boards.greenhouse.io/chime", "GREENHOUSE", software],
+  ["gusto-greenhouse", "Gusto", "https://boards.greenhouse.io/gusto", "GREENHOUSE", software, "STARTUP"],
+  ["mercury-greenhouse", "Mercury", "https://boards.greenhouse.io/mercury", "GREENHOUSE", software, "STARTUP"],
+  ["mixpanel-greenhouse", "Mixpanel", "https://boards.greenhouse.io/mixpanel", "GREENHOUSE", software, "STARTUP"],
+  ["fivetran-greenhouse", "Fivetran", "https://boards.greenhouse.io/fivetran", "GREENHOUSE", software, "STARTUP"],
+  ["grafana-greenhouse", "Grafana Labs", "https://boards.greenhouse.io/grafanalabs", "GREENHOUSE", software, "STARTUP"],
+  ["launchdarkly-greenhouse", "LaunchDarkly", "https://boards.greenhouse.io/launchdarkly", "GREENHOUSE", software, "STARTUP"],
+  ["cockroach-greenhouse", "Cockroach Labs", "https://boards.greenhouse.io/cockroachlabs", "GREENHOUSE", software, "STARTUP"],
+  ["planetscale-greenhouse", "PlanetScale", "https://boards.greenhouse.io/planetscale", "GREENHOUSE", software, "STARTUP"],
+  ["webflow-greenhouse", "Webflow", "https://boards.greenhouse.io/webflow", "GREENHOUSE", software, "STARTUP"],
+  ["together-greenhouse", "Together AI", "https://boards.greenhouse.io/togetherai", "GREENHOUSE", software, "STARTUP"],
+  ["ripple-greenhouse", "Ripple", "https://boards.greenhouse.io/ripple", "GREENHOUSE", software, "STARTUP"],
+  ["observeai-greenhouse", "Observe.AI", "https://boards.greenhouse.io/observeai", "GREENHOUSE", software, "STARTUP"],
+  ["anthropic-greenhouse", "Anthropic", "https://boards.greenhouse.io/anthropic", "GREENHOUSE", software, "STARTUP"],
+  ["spacex-greenhouse", "SpaceX", "https://boards.greenhouse.io/spacex", "GREENHOUSE", [...industrial, ...hardware], "STARTUP"],
+  ["rocketlab-greenhouse", "Rocket Lab", "https://boards.greenhouse.io/rocketlab", "GREENHOUSE", [...industrial, ...hardware], "STARTUP"],
+  ["waymo-greenhouse", "Waymo", "https://boards.greenhouse.io/waymo", "GREENHOUSE", [...software, ...hardware], "STARTUP"],
+  ["nuro-greenhouse", "Nuro", "https://boards.greenhouse.io/nuro", "GREENHOUSE", [...software, ...hardware], "STARTUP"],
+  ["archer-greenhouse", "Archer Aviation", "https://boards.greenhouse.io/archer", "GREENHOUSE", [...industrial, ...hardware], "STARTUP"],
+  ["etched-greenhouse", "Etched", "https://boards.greenhouse.io/etchedai", "GREENHOUSE", hardware, "STARTUP"],
+  ["lightmatter-greenhouse", "Lightmatter", "https://boards.greenhouse.io/lightmatter", "GREENHOUSE", hardware, "STARTUP"],
+  ["formlabs-greenhouse", "Formlabs", "https://boards.greenhouse.io/formlabs", "GREENHOUSE", [...industrial, ...hardware], "STARTUP"],
+  ["markforged-greenhouse", "Markforged", "https://boards.greenhouse.io/markforged", "GREENHOUSE", [...industrial, ...hardware], "STARTUP"],
+  ["consensys-greenhouse", "Consensys", "https://boards.greenhouse.io/consensys", "GREENHOUSE", software, "STARTUP"],
+  ["meesho-lever", "Meesho", "https://jobs.lever.co/meesho", "LEVER", software, "STARTUP"],
+  ["cred-lever", "CRED", "https://jobs.lever.co/cred", "LEVER", software, "STARTUP"],
+  ["mistral-lever", "Mistral AI", "https://jobs.lever.co/mistral", "LEVER", software, "STARTUP"],
+  ["anyscale-lever", "Anyscale", "https://jobs.lever.co/anyscale", "LEVER", software, "STARTUP"],
+  ["velo3d-lever", "Velo3D", "https://jobs.lever.co/velo3d", "LEVER", [...industrial, ...hardware], "STARTUP"],
+  ["notion-ashby", "Notion", "https://jobs.ashbyhq.com/notion", "ASHBY", software, "STARTUP"],
+  ["ramp-ashby", "Ramp", "https://jobs.ashbyhq.com/ramp", "ASHBY", [...software, "FINANCE"], "STARTUP"],
+  ["deel-ashby", "Deel", "https://jobs.ashbyhq.com/deel", "ASHBY", [...software, ...business], "STARTUP"],
+  ["cohere-ashby", "Cohere", "https://jobs.ashbyhq.com/cohere", "ASHBY", software, "STARTUP"],
+  ["perplexity-ashby", "Perplexity", "https://jobs.ashbyhq.com/perplexity", "ASHBY", software, "STARTUP"],
+  ["airbyte-ashby", "Airbyte", "https://jobs.ashbyhq.com/airbyte", "ASHBY", software, "STARTUP"],
+  ["alchemy-ashby", "Alchemy", "https://jobs.ashbyhq.com/alchemy", "ASHBY", software, "STARTUP"],
+  ["amplitude-ashby", "Amplitude", "https://jobs.ashbyhq.com/amplitude", "ASHBY", software],
+  ["cerebras-ashby", "Cerebras", "https://jobs.ashbyhq.com/cerebras", "ASHBY", hardware, "STARTUP"],
+  ["clickhouse-ashby", "ClickHouse", "https://jobs.ashbyhq.com/clickhouse", "ASHBY", software, "STARTUP"],
+  ["confluent-ashby", "Confluent", "https://jobs.ashbyhq.com/confluent", "ASHBY", software],
+  ["cursor-ashby", "Cursor", "https://jobs.ashbyhq.com/cursor", "ASHBY", software, "STARTUP"],
+  ["dmatrix-ashby", "d-Matrix", "https://jobs.ashbyhq.com/d-matrix", "ASHBY", hardware, "STARTUP"],
+  ["drata-ashby", "Drata", "https://jobs.ashbyhq.com/drata", "ASHBY", software, "STARTUP"],
+  ["elevenlabs-ashby", "ElevenLabs", "https://jobs.ashbyhq.com/elevenlabs", "ASHBY", software, "STARTUP"],
+  ["harvey-ashby", "Harvey", "https://jobs.ashbyhq.com/harvey", "ASHBY", software, "STARTUP"],
+  ["miro-ashby", "Miro", "https://jobs.ashbyhq.com/miro", "ASHBY", software, "STARTUP"],
+  ["modal-ashby", "Modal", "https://jobs.ashbyhq.com/modal", "ASHBY", software, "STARTUP"],
+  ["ouster-ashby", "Ouster", "https://jobs.ashbyhq.com/ouster", "ASHBY", hardware, "STARTUP"],
+  ["paxos-ashby", "Paxos", "https://jobs.ashbyhq.com/paxos", "ASHBY", software, "STARTUP"],
+  ["plaid-ashby", "Plaid", "https://jobs.ashbyhq.com/plaid", "ASHBY", software, "STARTUP"],
+  ["posthog-ashby", "PostHog", "https://jobs.ashbyhq.com/posthog", "ASHBY", software, "STARTUP"],
+  ["railway-ashby", "Railway", "https://jobs.ashbyhq.com/railway", "ASHBY", software, "STARTUP"],
+  ["render-ashby", "Render", "https://jobs.ashbyhq.com/render", "ASHBY", software, "STARTUP"],
+  ["replit-ashby", "Replit", "https://jobs.ashbyhq.com/replit", "ASHBY", software, "STARTUP"],
+  ["runway-ashby", "Runway", "https://jobs.ashbyhq.com/runway", "ASHBY", software, "STARTUP"],
+  ["sarvam-ashby", "Sarvam AI", "https://jobs.ashbyhq.com/sarvam", "ASHBY", software, "STARTUP"],
+  ["sentry-ashby", "Sentry", "https://jobs.ashbyhq.com/sentry", "ASHBY", software, "STARTUP"],
+  ["skydio-ashby", "Skydio", "https://jobs.ashbyhq.com/skydio", "ASHBY", [...industrial, ...hardware], "STARTUP"],
+  ["snowflake-ashby", "Snowflake", "https://jobs.ashbyhq.com/snowflake", "ASHBY", software],
+  ["snyk-ashby", "Snyk", "https://jobs.ashbyhq.com/snyk", "ASHBY", software, "STARTUP"],
+  ["temporal-ashby", "Temporal", "https://jobs.ashbyhq.com/temporal", "ASHBY", software, "STARTUP"],
+  ["vanta-ashby", "Vanta", "https://jobs.ashbyhq.com/vanta", "ASHBY", software, "STARTUP"],
+  ["wayve-ashby", "Wayve", "https://jobs.ashbyhq.com/wayve", "ASHBY", [...software, ...hardware], "STARTUP"],
+  ["wiz-ashby", "Wiz", "https://jobs.ashbyhq.com/wiz", "ASHBY", software, "STARTUP"],
+  ["writer-ashby", "Writer", "https://jobs.ashbyhq.com/writer", "ASHBY", software, "STARTUP"],
+  ["zapier-ashby", "Zapier", "https://jobs.ashbyhq.com/zapier", "ASHBY", software, "STARTUP"]
 ];
 
+const existingStartupIds = new Set([
+  "tenstorrent-greenhouse",
+  "supabase-ashby",
+  "ashbyhq-ashby",
+  "linear-ashby",
+  "openai-ashby",
+  "anduril-greenhouse",
+  "scale-ai-greenhouse",
+  "stripe-greenhouse",
+  "figma-greenhouse",
+  "databricks-greenhouse",
+  "drivetrain-lever",
+  "safe-security-lever",
+  "highlevel-lever"
+]);
+
 const knownIds = new Set(defaultDiscoverySources.map((source) => source.id));
-for (const [id, companyName, careersUrl, provider, domains] of additionalSources) {
-  if (knownIds.has(id)) continue;
-  defaultDiscoverySources.push({ id, companyName, careersUrl, provider, domains, locations: [], roleKeywords: [] });
+for (const source of defaultDiscoverySources) {
+  if (existingStartupIds.has(source.id)) source.stage = "STARTUP";
+}
+const knownUrls = new Set(defaultDiscoverySources.map((source) => source.careersUrl));
+for (const [id, companyName, careersUrl, provider, domains, stage] of additionalSources) {
+  if (knownIds.has(id) || knownUrls.has(careersUrl)) continue;
+  knownIds.add(id);
+  knownUrls.add(careersUrl);
+  defaultDiscoverySources.push({
+    id,
+    companyName,
+    careersUrl,
+    provider,
+    domains: [...new Set(domains)],
+    locations: [],
+    roleKeywords: [],
+    ...(stage === undefined ? {} : { stage })
+  });
 }

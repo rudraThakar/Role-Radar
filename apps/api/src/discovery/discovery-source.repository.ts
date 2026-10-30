@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { ProfileDomain } from "@roleradar/domain";
+import type { CompanyStage, ProfileDomain } from "@roleradar/domain";
 import { Prisma, type PrismaClient } from "@prisma/client";
 
 import type { DiscoveryProvider, DiscoverySource } from "./source-registry.js";
@@ -55,12 +55,13 @@ export class PrismaDiscoverySourceRepository implements DiscoverySourceRepositor
     for (const source of sources) {
       await this.prisma.$executeRaw`
         INSERT INTO "JobDiscoverySource" (
-          "id", "companyName", "careersUrl", "provider", "domains", "locations", "roleKeywords", "updatedAt"
+          "id", "companyName", "careersUrl", "provider", "domains", "locations", "roleKeywords", "stage", "updatedAt"
         ) VALUES (
           ${source.id}, ${source.companyName}, ${source.careersUrl}, ${source.provider},
           ${profileDomainArray(source.domains)},
           ${textArray(source.locations)},
           ${textArray(source.roleKeywords)},
+          ${source.stage ?? null},
           NOW()
         )
         ON CONFLICT ("id") DO UPDATE SET
@@ -70,6 +71,7 @@ export class PrismaDiscoverySourceRepository implements DiscoverySourceRepositor
           "domains" = EXCLUDED."domains",
           "locations" = EXCLUDED."locations",
           "roleKeywords" = EXCLUDED."roleKeywords",
+          "stage" = EXCLUDED."stage",
           "updatedAt" = NOW()
       `;
     }
@@ -77,7 +79,7 @@ export class PrismaDiscoverySourceRepository implements DiscoverySourceRepositor
 
   async findActive(): Promise<DiscoverySource[]> {
     const sources = await this.prisma.$queryRaw<DiscoverySourceRow[]>`
-      SELECT "id", "companyName", "careersUrl", "provider", "domains", "locations", "roleKeywords"
+      SELECT "id", "companyName", "careersUrl", "provider", "domains", "locations", "roleKeywords", "stage"
       FROM "JobDiscoverySource"
       WHERE "isActive" = true
       ORDER BY "provider" ASC, "companyName" ASC
@@ -90,7 +92,8 @@ export class PrismaDiscoverySourceRepository implements DiscoverySourceRepositor
       provider: source.provider as DiscoveryProvider,
       domains: source.domains as ProfileDomain[],
       locations: source.locations,
-      roleKeywords: source.roleKeywords
+      roleKeywords: source.roleKeywords,
+      ...(source.stage === null ? {} : { stage: source.stage as CompanyStage })
     }));
   }
 
@@ -140,6 +143,7 @@ interface DiscoverySourceRow {
   domains: string[];
   locations: string[];
   roleKeywords: string[];
+  stage: string | null;
 }
 
 function textArray(values: string[]): Prisma.Sql {

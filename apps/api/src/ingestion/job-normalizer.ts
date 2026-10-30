@@ -61,7 +61,7 @@ function inferSeniority(title: string, text: string, experience: ExperienceRange
   // Title signals are stronger than incidental wording in a description such
   // as "work with senior engineers" or "mentor junior engineers".
   if (
-    /\b(senior|sr|staff|principal|lead|manager|director|head of|architect|distinguished|fellow|vp|vice president)\b/.test(
+    /\b(senior|sr|staff|principal|lead|director|head of|architect|distinguished|fellow|vp|vice president|engineering manager|senior manager|group manager|general manager)\b/.test(
       normalizedTitle
     )
   ) {

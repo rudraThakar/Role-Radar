@@ -31,7 +31,10 @@ export class RecommendationService {
       throw new HttpError(404, "Profile not found");
     }
 
-    const jobs = await this.jobRepository.findByDomain(profile.domain);
+    const jobs =
+      profile.domain === "GENERAL"
+        ? await this.jobRepository.findAll()
+        : await this.jobRepository.findByDomain(profile.domain);
     const stateByJobId = new Map(
       (await this.jobStateRepository.findForProfile(userId, profileId)).map((jobState) => [jobState.jobId, jobState.state])
     );
@@ -53,17 +56,23 @@ export class RecommendationService {
       .filter((recommendation) => recommendation.eligibility !== "INELIGIBLE")
       .filter((recommendation) => isStrictProfileMatch(recommendation.job, profile))
       .filter((recommendation) => recommendation.state !== "HIDDEN")
-      .sort((left, right) => right.score - left.score);
+      .sort((left, right) => right.score - left.score)
+      // The feed only previews descriptions; full text made responses multi-MB.
+      .map((recommendation) => ({
+        ...recommendation,
+        job: { ...recommendation.job, description: previewDescription(recommendation.job.description) }
+      }));
   }
 }
 
 export function isStrictProfileMatch(job: CanonicalJob, profile: CareerProfile): boolean {
-  if (!job.domains.includes(profile.domain)) {
+  // "General" profiles are defined purely by their target roles.
+  if (profile.domain !== "GENERAL" && !job.domains.includes(profile.domain)) {
     return false;
   }
 
   if (profile.preferredRoles.length === 0) {
-    return true;
+    return profile.domain !== "GENERAL";
   }
 
   const jobRoleText = normalizeText(`${job.title} ${job.normalizedTitle}`);
@@ -71,4 +80,9 @@ export function isStrictProfileMatch(job: CanonicalJob, profile: CareerProfile):
     const normalizedRole = normalizeText(role);
     return jobRoleText.includes(normalizedRole) || roleTitleMatchScore(jobRoleText, normalizedRole) >= 0.5;
   });
+}
+
+function previewDescription(description: string): string {
+  const normalized = description.replace(/\s+/g, " ").trim();
+  return normalized.length <= 600 ? normalized : `${normalized.slice(0, 597).trimEnd()}...`;
 }

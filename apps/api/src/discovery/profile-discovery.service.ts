@@ -58,8 +58,9 @@ export interface GlobalDiscoverySummary {
 }
 
 // Render's free instance has a small memory budget. ATS responses can contain
-// hundreds of full job descriptions, so process one board at a time.
-const sourceConcurrency = 1;
+// hundreds of full job descriptions, so only a few boards run at once and
+// nothing but counters is retained between postings.
+const sourceConcurrency = 3;
 
 export class ProfileDiscoveryService {
   constructor(
@@ -155,7 +156,9 @@ export class ProfileDiscoveryService {
 
       for (const rawJob of rawJobs) {
         try {
-          const persisted = await this.jobRepository.upsertBySourceUrl(normalizeRawJobPosting(rawJob));
+          const normalizedJob = normalizeRawJobPosting(rawJob);
+          if (source.stage !== undefined) normalizedJob.companyStage = source.stage;
+          const persisted = await this.jobRepository.upsertBySourceUrl(normalizedJob);
           result.normalized += 1;
           result.stored += 1;
           if (persisted.created) result.created += 1;

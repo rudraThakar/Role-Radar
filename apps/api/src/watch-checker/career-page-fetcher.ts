@@ -14,7 +14,7 @@ const workdayPageSize = 20;
 // Listings are cheap (titles only). Page deep, then fetch full descriptions
 // only for postings whose title looks relevant, which bounds memory.
 const maximumWorkdayPages = 60;
-const maximumWorkdayDetails = 250;
+const maximumWorkdayDetails = 600;
 const workdayDetailConcurrency = 5;
 const detailConcurrency = 5;
 
@@ -371,11 +371,11 @@ function looksLikeJobLink(title: string, href: string): boolean {
   return /\b(engineer|developer|software|backend|frontend|rtl|verification|embedded|mechanical|civil|structural|manufacturing|design|quality|intern|graduate|job|opening|role)\b/.test(text);
 }
 
-const relevantTitlePattern =
-  /\b(engineer|engineering|developer|software|sde|swe|programmer|architect|devops|sre|data|machine learning|ml|ai|scientist|analyst|designer|design|verification|validation|rtl|asic|fpga|vlsi|soc|silicon|firmware|embedded|hardware|digital|mechanical|civil|structural|manufacturing|quality|test|intern|graduate|trainee|researcher|research|technician|cad|hvac|electrical|electronics|site|construction|geotechnical|infrastructure|platform|security|backend|frontend|full[ -]?stack)\b/i;
+// Titles that clearly are not hiring postings for a role (events, talent pools).
+const irrelevantTitlePattern = /\b(talent (?:community|network|pool)|general application|future opportunities|join our talent)\b/i;
 
 export function isRelevantJobTitle(title: string): boolean {
-  return relevantTitlePattern.test(title);
+  return !irrelevantTitlePattern.test(title);
 }
 
 function decodeEntities(html: string): string {

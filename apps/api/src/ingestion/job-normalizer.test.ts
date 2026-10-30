@@ -37,6 +37,7 @@ describe("normalizeRawJobPosting seniority", () => {
 
   it("marks senior titles and numbered levels", () => {
     assert.equal(normalizeRawJobPosting({ ...base, title: "Engineering Manager" }).seniority, "SENIOR");
+    assert.notEqual(normalizeRawJobPosting({ ...base, title: "Product Manager" }).seniority, "SENIOR");
     assert.equal(normalizeRawJobPosting({ ...base, title: "Software Engineer III" }).seniority, "SENIOR");
     assert.equal(normalizeRawJobPosting({ ...base, title: "Software Engineer II" }).seniority, "MID_LEVEL");
   });
