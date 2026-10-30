@@ -3,7 +3,7 @@ services:
     name: roleradar-api
     runtime: node
     plan: free
-    buildCommand: npm ci --include=dev && npm --workspace @roleradar/api run db:generate && npm run build:packages && npm --workspace @roleradar/api run build && npm --workspace @roleradar/api run db:deploy
+    buildCommand: npm ci --include=dev && npm --workspace @roleradar/api run db:generate && npm run build:packages && npm --workspace @roleradar/api run build && npm --workspace @roleradar/api run db:deploy && npm --workspace @roleradar/api run reclassify
     startCommand: npm --workspace @roleradar/api start
     healthCheckPath: /health
     envVars:

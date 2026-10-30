@@ -31,11 +31,26 @@ export function evaluateEligibility(job: CanonicalJob, profile: CareerProfile): 
     });
   }
 
-  if (job.seniority === "SENIOR" && profile.experienceMonths < 24) {
+  if (job.seniority === "SENIOR" && profile.experienceMonths < 48) {
     return ineligible("Role title indicates a senior-level position", {
       jobSeniority: job.seniority,
       profileExperienceMonths: profile.experienceMonths
     });
+  }
+
+  if (
+    job.minimumExperienceMonths === undefined &&
+    job.seniority === "MID_LEVEL" &&
+    profile.experienceMonths < 12
+  ) {
+    return ineligible("Role is mid-level and this profile has under a year of experience", {
+      jobSeniority: job.seniority,
+      profileExperienceMonths: profile.experienceMonths
+    });
+  }
+
+  if (job.minimumExperienceMonths === undefined && job.seniority === "UNKNOWN") {
+    gaps.push("Posting does not state an experience requirement");
   }
 
   if (job.minimumExperienceMonths !== undefined) {

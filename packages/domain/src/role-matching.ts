@@ -17,7 +17,13 @@ const genericRoleTokens = new Set([
   "staff"
 ]);
 
+const softwareFamily = new Set(["software", "backend", "frontend", "full", "stack", "fullstack", "web", "platform", "cloud"]);
+
 const aliases: Record<string, string> = {
+  sde: "software",
+  swe: "software",
+  software: "software",
+  programmer: "software",
   backend: "backend",
   server: "backend",
   frontend: "frontend",
@@ -49,7 +55,16 @@ export function roleTitleMatchScore(jobTitle: string, preferredRole: string): nu
     if (jobTokens.has(token)) matches += 1;
   }
 
-  return matches / preferredTokens.size;
+  const score = matches / preferredTokens.size;
+
+  // A generic "Software Engineer" posting is a legitimate hit for a backend,
+  // frontend or full-stack profile when the posting names no other specialty.
+  const preferredIsSoftwareSpecialty = [...preferredTokens].every((token) => softwareFamily.has(token));
+  if (preferredIsSoftwareSpecialty && jobTokens.has("software")) {
+    return Math.max(score, 0.6);
+  }
+
+  return score;
 }
 
 function meaningfulRoleTokens(value: string): Set<string> {

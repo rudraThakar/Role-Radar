@@ -11,7 +11,26 @@ const domainSignals: Record<ProfileDomain, string[]> = {
     "typescript",
     "java",
     "python",
-    "distributed systems"
+    "distributed systems",
+    "sde",
+    "swe",
+    "developer",
+    "programmer",
+    "devops",
+    "site reliability",
+    "sre",
+    "full-stack",
+    "golang",
+    "kotlin",
+    "android",
+    "ios",
+    "react",
+    "cloud",
+    "platform engineer",
+    "api",
+    "qa engineer",
+    "test engineer",
+    "software engineer"
   ],
   DIGITAL_HARDWARE: [
     "rtl",
@@ -21,10 +40,48 @@ const domainSignals: Record<ProfileDomain, string[]> = {
     "formal verification",
     "design verification",
     "asic",
-    "fpga"
+    "fpga",
+    "physical design",
+    "dft",
+    "uvm",
+    "soc",
+    "silicon",
+    "pre-silicon",
+    "post-silicon",
+    "logic design",
+    "circuit design",
+    "digital design",
+    "emulation",
+    "timing closure"
   ],
-  EMBEDDED: ["embedded", "firmware", "microcontroller", "rtos", "device driver"],
-  DATA_ML: ["machine learning", "data scientist", "ml engineer", "pytorch", "tensorflow"],
+  EMBEDDED: [
+    "embedded",
+    "firmware",
+    "microcontroller",
+    "rtos",
+    "device driver",
+    "bsp",
+    "bootloader",
+    "autosar",
+    "linux kernel",
+    "kernel driver"
+  ],
+  DATA_ML: [
+    "machine learning",
+    "data scientist",
+    "ml engineer",
+    "pytorch",
+    "tensorflow",
+    "data engineer",
+    "data analyst",
+    "deep learning",
+    "llm",
+    "nlp",
+    "computer vision",
+    "applied scientist",
+    "mlops",
+    "ai engineer"
+  ],
   RESEARCH: ["research", "scientist", "publication", "phd"],
   MECHANICAL: [
     "mechanical",
@@ -57,16 +114,32 @@ export interface DomainClassification {
   evidence: string[];
 }
 
+function containsSignal(normalizedText: string, signal: string): boolean {
+  const normalizedSignal = normalizeText(signal);
+  const escaped = normalizedSignal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?<![a-z0-9])${escaped}(?![a-z0-9])`).test(normalizedText);
+}
+
 export function classifyJobDomain(job: Pick<CanonicalJob, "title" | "description" | "skills">): DomainClassification {
-  const searchableText = normalizeText(`${job.title} ${job.description} ${job.skills.join(" ")}`);
+  const title = normalizeText(job.title);
+  const body = normalizeText(`${job.description} ${job.skills.join(" ")}`);
   const domains: ProfileDomain[] = [];
   const evidence: string[] = [];
 
   for (const [domain, signals] of Object.entries(domainSignals) as Array<[ProfileDomain, string[]]>) {
-    const matchedSignal = signals.find((signal) => searchableText.includes(normalizeText(signal)));
-    if (matchedSignal !== undefined) {
+    // A signal in the title is decisive. In the body a single incidental
+    // mention ("we also use Python") is not enough, so require two signals.
+    const titleSignal = signals.find((signal) => containsSignal(title, signal));
+    if (titleSignal !== undefined) {
       domains.push(domain);
-      evidence.push(`${domain}: matched "${matchedSignal}"`);
+      evidence.push(`${domain}: title matched "${titleSignal}"`);
+      continue;
+    }
+
+    const bodySignals = signals.filter((signal) => containsSignal(body, signal));
+    if (bodySignals.length >= 2) {
+      domains.push(domain);
+      evidence.push(`${domain}: description matched "${bodySignals.slice(0, 2).join('", "')}"`);
     }
   }
 
