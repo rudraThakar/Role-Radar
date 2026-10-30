@@ -90,11 +90,17 @@ export function evaluateEligibility(job: CanonicalJob, profile: CareerProfile): 
     });
   }
 
-  if (!profile.includeInternationalRoles && isInternationalOnlyJob(job.locations, profile.citizenshipCountry ?? "India")) {
-    return ineligible("Job is outside this profile's default work-authorization country", {
-      jobLocations: job.locations,
-      citizenshipCountry: profile.citizenshipCountry ?? "India"
-    });
+  if (!profile.includeInternationalRoles) {
+    const homeCountry = profile.citizenshipCountry ?? "India";
+    const authorization = assessWorkAuthorization(job, homeCountry);
+    if (authorization !== "OK") {
+      return ineligible(
+        authorization === "UNSTATED"
+          ? "Job location is not stated, so it cannot be confirmed as open to this profile's country"
+          : "Job is outside this profile's default work-authorization country",
+        { jobLocations: job.locations, citizenshipCountry: homeCountry }
+      );
+    }
   }
 
   if (job.salaryMin !== undefined && profile.minimumSalary !== undefined && job.salaryMin < profile.minimumSalary) {
@@ -175,44 +181,113 @@ function countLocationMatches(preferredLocations: string[], jobLocations: string
   return matches;
 }
 
-function isInternationalOnlyJob(jobLocations: string[], citizenshipCountry: string): boolean {
-  if (jobLocations.length === 0) {
-    return false;
+type WorkAuthorization = "OK" | "OUTSIDE" | "UNSTATED";
+
+// A job is only shown when it positively belongs to the profile's country or
+// is location-neutral remote. Unrecognised places are treated as outside, so a
+// missing country list can never leak foreign jobs into the feed.
+function assessWorkAuthorization(job: CanonicalJob, homeCountry: string): WorkAuthorization {
+  const home = normalizeCountry(homeCountry);
+  const locations = job.locations.map((location) => location.trim()).filter((location) => location.length > 0);
+
+  if (locations.length === 0) {
+    return job.workMode === "REMOTE" ? "OK" : "UNSTATED";
   }
 
-  const normalizedCitizenship = normalizeCountry(citizenshipCountry);
-  const detectedCountries = jobLocations.map(detectCountry).filter((country): country is string => country !== undefined);
+  for (const location of locations) {
+    const country = detectCountry(location);
+    if (country === home) return "OK";
+    if (country === undefined && normalizeText(location).includes(home)) return "OK";
+    if (country === undefined && isLocationNeutral(location)) return "OK";
+  }
 
-  return detectedCountries.length > 0 && detectedCountries.every((country) => country !== normalizedCitizenship);
+  return "OUTSIDE";
 }
+
+function isLocationNeutral(location: string): boolean {
+  return /^(?:remote|anywhere|worldwide|global|work from home|fully remote|distributed)(?:\s*[-,(]?\s*(?:anywhere|worldwide|global|distributed))?\)?$/.test(
+    normalizeText(location)
+  );
+}
+
+const countryPatterns: Array<[string, RegExp]> = [
+  [
+    "india",
+    /\b(india|bengaluru|bangalore|hyderabad|pune|chennai|gurugram|gurgaon|noida|mumbai|navi mumbai|thane|ahmedabad|kochi|cochin|kolkata|jaipur|delhi|new delhi|ncr|chandigarh|mohali|thiruvananthapuram|trivandrum|indore|coimbatore|bhubaneswar|nagpur|vadodara|surat|lucknow|mysuru|mysore|visakhapatnam|gandhinagar|karnataka|maharashtra|telangana|tamil nadu|haryana|uttar pradesh|gujarat|kerala)\b/
+  ],
+  ["canada", /\b(canada|toronto|vancouver|ontario|montreal|ottawa|calgary|waterloo|british columbia|quebec)\b/],
+  ["united kingdom", /\b(united kingdom|uk|london|england|scotland|wales|manchester|edinburgh|cambridge uk|bristol|belfast)\b/],
+  ["germany", /\b(germany|berlin|munich|hamburg|frankfurt|cologne|stuttgart|dresden)\b/],
+  ["hungary", /\b(hungary|budapest)\b/],
+  ["poland", /\b(poland|warsaw|krakow|wroclaw|gdansk)\b/],
+  ["israel", /\b(israel|tel aviv|haifa|jerusalem|herzliya)\b/],
+  ["netherlands", /\b(netherlands|amsterdam|eindhoven|rotterdam|utrecht)\b/],
+  ["ireland", /\b(ireland|dublin|cork|galway)\b/],
+  ["france", /\b(france|paris|grenoble|lyon|toulouse)\b/],
+  ["spain", /\b(spain|madrid|barcelona)\b/],
+  ["portugal", /\b(portugal|lisbon|porto)\b/],
+  ["italy", /\b(italy|milan|rome|turin)\b/],
+  ["sweden", /\b(sweden|stockholm|gothenburg)\b/],
+  ["denmark", /\b(denmark|copenhagen)\b/],
+  ["norway", /\b(norway|oslo)\b/],
+  ["finland", /\b(finland|helsinki)\b/],
+  ["switzerland", /\b(switzerland|zurich|geneva|lausanne)\b/],
+  ["austria", /\b(austria|vienna)\b/],
+  ["belgium", /\b(belgium|brussels|leuven)\b/],
+  ["czech republic", /\b(czech|prague|brno)\b/],
+  ["romania", /\b(romania|bucharest)\b/],
+  ["ukraine", /\b(ukraine|kyiv|kiev)\b/],
+  ["turkey", /\b(turkey|istanbul)\b/],
+  ["singapore", /\b(singapore)\b/],
+  ["taiwan", /\b(taiwan|hsinchu|taipei)\b/],
+  ["china", /\b(china|shanghai|beijing|shenzhen|hangzhou|guangzhou)\b/],
+  ["hong kong", /\b(hong kong)\b/],
+  ["south korea", /\b(south korea|korea|seoul)\b/],
+  ["japan", /\b(japan|tokyo|osaka|yokohama)\b/],
+  ["australia", /\b(australia|sydney|melbourne|brisbane|perth|canberra)\b/],
+  ["new zealand", /\b(new zealand|auckland|wellington)\b/],
+  ["united arab emirates", /\b(uae|united arab emirates|dubai|abu dhabi)\b/],
+  ["saudi arabia", /\b(saudi|riyadh)\b/],
+  ["brazil", /\b(brazil|sao paulo|rio de janeiro)\b/],
+  ["mexico", /\b(mexico|mexico city|guadalajara|monterrey)\b/],
+  ["argentina", /\b(argentina|buenos aires)\b/],
+  ["colombia", /\b(colombia|bogota|medellin)\b/],
+  ["chile", /\b(chile|santiago)\b/],
+  ["south africa", /\b(south africa|cape town|johannesburg)\b/],
+  ["nigeria", /\b(nigeria|lagos)\b/],
+  ["kenya", /\b(kenya|nairobi)\b/],
+  ["egypt", /\b(egypt|cairo)\b/],
+  ["philippines", /\b(philippines|manila)\b/],
+  ["vietnam", /\b(vietnam|ho chi minh|hanoi)\b/],
+  ["indonesia", /\b(indonesia|jakarta)\b/],
+  ["malaysia", /\b(malaysia|kuala lumpur)\b/],
+  ["thailand", /\b(thailand|bangkok)\b/],
+  ["pakistan", /\b(pakistan|karachi|lahore)\b/],
+  ["bangladesh", /\b(bangladesh|dhaka)\b/],
+  ["sri lanka", /\b(sri lanka|colombo)\b/],
+  ["emea", /\b(emea|europe|european union|eu only)\b/],
+  ["apac", /\b(apac|asia pacific|latam|latin america|north america|americas)\b/]
+];
 
 function detectCountry(location: string): string | undefined {
   const normalizedLocation = normalizeText(location);
-  if (/\b(india|bengaluru|bangalore|hyderabad|pune|chennai|gurugram|noida|mumbai|ahmedabad|kochi|kolkata|jaipur)\b/.test(normalizedLocation)) {
-    return "india";
+  // "Remote - India" must resolve to India even though other tokens exist.
+  for (const [country, pattern] of countryPatterns) {
+    if (country === "india" && pattern.test(normalizedLocation)) return country;
   }
+  if (/(?:^|,\s*)IN\s*$/.test(location.trim())) return "india";
   if (isUnitedStatesLocation(location, normalizedLocation)) {
     return "united states";
   }
-  if (/\b(canada|toronto|vancouver|ontario)\b/.test(normalizedLocation)) return "canada";
-  if (/\b(united kingdom|uk|london|england)\b/.test(normalizedLocation)) return "united kingdom";
-  if (/\b(germany|berlin|munich)\b/.test(normalizedLocation)) return "germany";
-  if (/\b(hungary|budapest)\b/.test(normalizedLocation)) return "hungary";
-  if (/\b(pol[a-z]*|warsaw|krakow)\b/.test(normalizedLocation)) return "poland";
-  if (/\b(israel|tel aviv|haifa)\b/.test(normalizedLocation)) return "israel";
-  if (/\b(netherlands|amsterdam|eindhoven)\b/.test(normalizedLocation)) return "netherlands";
-  if (/\b(ireland|dublin|cork)\b/.test(normalizedLocation)) return "ireland";
-  if (/\b(france|paris|grenoble)\b/.test(normalizedLocation)) return "france";
-  if (/\b(singapore)\b/.test(normalizedLocation)) return "singapore";
-  if (/\b(taiwan|hsinchu|taipei)\b/.test(normalizedLocation)) return "taiwan";
-  if (/\b(china|shanghai|beijing|shenzhen)\b/.test(normalizedLocation)) return "china";
-  if (/\b(south korea|korea|seoul)\b/.test(normalizedLocation)) return "south korea";
+  for (const [country, pattern] of countryPatterns) {
+    if (pattern.test(normalizedLocation)) return country;
+  }
   return undefined;
 }
 
 function isUnitedStatesLocation(location: string, normalizedLocation: string): boolean {
   if (
-    /\b(usa|u s a|united states|us ca|us ny|us wa|california|new york|texas|massachusetts|washington state|illinois|virginia|north carolina|south carolina|colorado|georgia|florida|new jersey|pennsylvania|oregon|michigan|minnesota|arizona)\b/.test(
+    /\b(us|usa|u s a|united states|us ca|us ny|us wa|california|new york|texas|massachusetts|washington state|illinois|virginia|north carolina|south carolina|colorado|georgia|florida|new jersey|pennsylvania|oregon|michigan|minnesota|arizona)\b/.test(
       normalizedLocation
     )
   ) {

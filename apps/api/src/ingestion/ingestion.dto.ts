@@ -9,6 +9,9 @@ export interface RawJobPostingInput {
   locations?: string[];
   skills?: string[];
   publishedAt?: Date;
+  // Structured hints from the source's own API. They beat text guessing.
+  workMode?: "ONSITE" | "HYBRID" | "REMOTE";
+  employmentType?: "FULL_TIME" | "PART_TIME" | "CONTRACT" | "INTERNSHIP";
 }
 
 export interface ImportJobsInput {

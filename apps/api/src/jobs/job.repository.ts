@@ -290,6 +290,8 @@ export function isLikelyRealJobSourceUrl(sourceUrl: string): boolean {
     if (hostname === "boards.greenhouse.io" || hostname === "job-boards.greenhouse.io") return pathname.includes("/jobs/");
     if (hostname === "jobs.lever.co") return pathname.split("/").filter(Boolean).length >= 2;
     if (hostname === "jobs.ashbyhq.com") return pathname.split("/").filter(Boolean).length >= 2;
+    if (hostname === "apply.workable.com") return /^\/j\/[^/]+/.test(pathname);
+    if (hostname === "jobs.smartrecruiters.com") return pathname.split("/").filter(Boolean).length >= 2;
     if (hostname === "careers.amd.com") return /^\/careers-home\/jobs\/\d+/.test(pathname) || /^\/jobs\/\d+/.test(pathname);
 
     return /\/job(s)?\/[^/?#]+/.test(pathname);

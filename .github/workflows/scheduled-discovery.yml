@@ -12,7 +12,7 @@ concurrency:
 jobs:
   discover:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 120
     steps:
       - name: Trigger matching-job discovery
         env:
@@ -31,7 +31,7 @@ jobs:
           run_id=$(printf '%s' "$response" | jq -er '.data.runId')
           echo "Scheduled discovery run: $run_id"
 
-          for attempt in $(seq 1 120); do
+          for attempt in $(seq 1 330); do
             status_response=$(curl --fail-with-body --silent --show-error \
               --connect-timeout 20 \
               --max-time 60 \
@@ -49,7 +49,7 @@ jobs:
                 exit 1
                 ;;
               RUNNING)
-                echo "Scan still running (poll $attempt/120)"
+                echo "Scan still running (poll $attempt/330)"
                 sleep 20
                 ;;
               *)
@@ -60,5 +60,5 @@ jobs:
             esac
           done
 
-          echo "Scheduled discovery did not finish within 40 minutes"
+          echo "Scheduled discovery did not finish within 110 minutes"
           exit 1

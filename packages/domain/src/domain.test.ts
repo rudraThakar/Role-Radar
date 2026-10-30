@@ -293,3 +293,58 @@ describe("suggestProfileTargetsFromText", () => {
     );
   });
 });
+
+
+describe("work authorization strictness", () => {
+  const baseJob = {
+    id: "job",
+    companyName: "Acme",
+    title: "Software Engineer",
+    normalizedTitle: "software engineer",
+    description: "Build backend services.",
+    employmentType: "FULL_TIME",
+    seniority: "UNKNOWN",
+    domains: ["SOFTWARE"],
+    skills: [],
+    locations: [] as string[],
+    workMode: "UNKNOWN",
+    sourceUrl: "https://example.com/jobs/1",
+    applyUrl: "https://example.com/jobs/1",
+    discoveredAt: new Date(),
+    evidence: []
+  } as const;
+  const profile = {
+    id: "p",
+    name: "India SDE",
+    domain: "SOFTWARE",
+    experienceMonths: 0,
+    preferredRoles: [],
+    preferredLocations: ["India", "Remote"],
+    preferredWorkModes: [],
+    targetCompanies: [],
+    excludedCompanies: [],
+    includedKeywords: [],
+    excludedKeywords: [],
+    skills: [],
+    seeksEmploymentTypes: []
+  } as const;
+
+  function eligibilityFor(locations: string[], workMode: "REMOTE" | "UNKNOWN" = "UNKNOWN") {
+    return buildRecommendation({ ...baseJob, locations, workMode } as never, profile as never).eligibility;
+  }
+
+  it("rejects foreign, unrecognised and unstated locations for a home-country profile", () => {
+    assert.equal(eligibilityFor(["San Francisco"]), "INELIGIBLE");
+    assert.equal(eligibilityFor(["Remote - US"], "REMOTE"), "INELIGIBLE");
+    assert.equal(eligibilityFor(["Lisbon, Portugal"]), "INELIGIBLE");
+    assert.equal(eligibilityFor(["Somewhere Unknown"]), "INELIGIBLE");
+    assert.equal(eligibilityFor([]), "INELIGIBLE");
+  });
+
+  it("accepts home-country and location-neutral remote jobs", () => {
+    assert.notEqual(eligibilityFor(["Bengaluru, India"]), "INELIGIBLE");
+    assert.notEqual(eligibilityFor(["Remote - India"], "REMOTE"), "INELIGIBLE");
+    assert.notEqual(eligibilityFor(["Remote"], "REMOTE"), "INELIGIBLE");
+    assert.notEqual(eligibilityFor([], "REMOTE"), "INELIGIBLE");
+  });
+});

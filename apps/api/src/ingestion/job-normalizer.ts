@@ -28,14 +28,14 @@ export function normalizeRawJobPosting(rawJob: RawJobPostingInput): CreateJobInp
     title: rawJob.title,
     normalizedTitle: normalizeTitle(rawJob.title),
     description: rawJob.description,
-    employmentType: inferEmploymentType(searchableText),
+    employmentType: rawJob.employmentType ?? inferEmploymentType(normalizeText(rawJob.title), searchableText),
     seniority: inferSeniority(rawJob.title, searchableText, experience),
     // Unknown postings must not be mislabeled as software. They cannot pass a
     // strict profile-domain match until the classifier has positive evidence.
     domains: classification.domains,
     skills,
-    locations: rawJob.locations ?? inferLocations(rawJob.description),
-    workMode: inferWorkMode(searchableText),
+    locations: rawJob.locations !== undefined && rawJob.locations.length > 0 ? rawJob.locations : inferLocations(rawJob.description),
+    workMode: rawJob.workMode ?? inferWorkMode(rawJob.title, rawJob.locations ?? [], sourceText),
     sourceUrl: rawJob.sourceUrl,
     applyUrl: rawJob.applyUrl ?? rawJob.sourceUrl,
     discoveredAt: new Date()
@@ -48,11 +48,12 @@ export function normalizeRawJobPosting(rawJob: RawJobPostingInput): CreateJobInp
   return input;
 }
 
-function inferEmploymentType(text: string): EmploymentType {
-  if (text.includes("intern")) return "INTERNSHIP";
-  if (text.includes("contract")) return "CONTRACT";
-  if (text.includes("part time") || text.includes("part-time")) return "PART_TIME";
-  return employmentTypes.includes("FULL_TIME") ? "FULL_TIME" : "UNKNOWN";
+function inferEmploymentType(title: string, text: string): EmploymentType {
+  if (/\b(intern|internship|trainee)\b/.test(title)) return "INTERNSHIP";
+  if (/\b(contract|contractor|fixed term)\b/.test(title)) return "CONTRACT";
+  if (/\b(part time|part-time)\b/.test(title)) return "PART_TIME";
+  if (/\b(this is an? (?:unpaid )?internship|internship (?:program|opportunity))\b/.test(text)) return "INTERNSHIP";
+  return "FULL_TIME";
 }
 
 function inferSeniority(title: string, text: string, experience: ExperienceRange): Seniority {
@@ -163,32 +164,60 @@ function parseNumber(value: string | undefined): number | undefined {
   return numberWords[value];
 }
 
-function inferWorkMode(text: string): WorkMode {
-  if (text.includes("remote")) return "REMOTE";
-  if (text.includes("hybrid")) return "HYBRID";
-  if (text.includes("onsite") || text.includes("on-site") || text.includes("office")) return "ONSITE";
+function inferWorkMode(title: string, locations: string[], text: string): WorkMode {
+  const structured = normalizeText(`${title} ${locations.join(" ")}`);
+  if (/\bremote\b/.test(structured)) return "REMOTE";
+  if (/\bhybrid\b/.test(structured)) return "HYBRID";
+
+  // Descriptions mention "remote" in unrelated ways (remote teams, remote
+  // access), so only explicit statements about this role count.
+  const body = normalizeText(text);
+  if (/\b(fully remote|100 remote|remote first|remote position|remote role|remote opportunity|work from home|this role is remote|this is a remote)\b/.test(body)) {
+    return "REMOTE";
+  }
+  if (/\b(hybrid (?:role|position|work|model|schedule)|hybrid work)\b/.test(body)) return "HYBRID";
+  if (/\b(on site|onsite|in office|in person)\b/.test(body)) return "ONSITE";
   return workModes.includes("UNKNOWN") ? "UNKNOWN" : "ONSITE";
 }
 
+const knownLocations = [
+  "Bengaluru",
+  "Bangalore",
+  "Hyderabad",
+  "Pune",
+  "Chennai",
+  "Gurugram",
+  "Gurgaon",
+  "Noida",
+  "Mumbai",
+  "Delhi",
+  "Ahmedabad",
+  "Kochi",
+  "Kolkata",
+  "Jaipur",
+  "Chandigarh",
+  "Indore",
+  "Coimbatore",
+  "Thiruvananthapuram",
+  "Bhubaneswar",
+  "Nagpur",
+  "Vadodara",
+  "Lucknow",
+  "Mysuru",
+  "India",
+  "Remote",
+  "United States",
+  "United Kingdom",
+  "Germany",
+  "Singapore",
+  "Canada"
+];
+
+// Only used when the source gave no structured location. Looks at the opening
+// of the text, where a posting states where the job is, not the whole body.
 function inferLocations(text: string): string[] {
-  const knownLocations = [
-    "Bengaluru",
-    "Hyderabad",
-    "Pune",
-    "Chennai",
-    "Gurugram",
-    "Noida",
-    "Mumbai",
-    "Ahmedabad",
-    "Kochi",
-    "Kolkata",
-    "Jaipur",
-    "Remote",
-    "USA",
-    "United States"
-  ];
-  const normalizedText = normalizeText(text);
-  return knownLocations.filter((location) => normalizedText.includes(normalizeText(location)));
+  const normalizedText = ` ${normalizeText(text.slice(0, 1500))} `;
+  return knownLocations.filter((location) => normalizedText.includes(` ${normalizeText(location)} `));
 }
 
 function inferSkills(text: string): string[] {

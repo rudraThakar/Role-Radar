@@ -135,7 +135,9 @@ describe("career page fetcher", () => {
             title: "RTL Design Engineer",
             jobUrl: "https://jobs.ashbyhq.com/exampleco/123",
             descriptionHtml: "<p>Verilog and RTL role.</p>",
-            locationName: "Hyderabad"
+            location: "Hyderabad",
+            address: { postalAddress: { addressCountry: "India" } },
+            workplaceType: "Hybrid"
           }
         ]
       });
@@ -153,7 +155,103 @@ describe("career page fetcher", () => {
     });
 
     assert.equal(jobs[0]?.title, "RTL Design Engineer");
-    assert.deepEqual(jobs[0]?.locations, ["Hyderabad"]);
+    assert.deepEqual(jobs[0]?.locations, ["Hyderabad, India"]);
+  });
+
+  it("fetches Workable and SmartRecruiters jobs with structured locations", async () => {
+    const watch = (careersUrl: string) => ({
+      id: "watch_1",
+      userId: "user_1",
+      profileId: "profile_1",
+      companyName: "ExampleCo",
+      careersUrl,
+      checkCadenceDays: 1,
+      isActive: true,
+      createdAt: new Date("2026-10-09T00:00:00.000Z")
+    });
+    const fetcher = new PlatformCareerPageFetcher(async (url) => {
+      const target = String(url);
+      if (target.startsWith("https://apply.workable.com/api/v1/widget/accounts/exampleco")) {
+        return jsonResponse({
+          jobs: [
+            {
+              title: "Embedded Engineer",
+              shortlink: "https://apply.workable.com/j/ABC123",
+              url: "https://apply.workable.com/j/ABC123",
+              description: "<p>2+ years of experience with firmware.</p>",
+              telecommuting: false,
+              locations: [{ city: "Bengaluru", region: "Karnataka", country: "India" }]
+            }
+          ]
+        });
+      }
+      if (target.includes("/postings/777")) {
+        return jsonResponse({
+          postingUrl: "https://jobs.smartrecruiters.com/ExampleCo/777-analyst",
+          jobAd: { sections: { jobDescription: { text: "<p>Analyze data.</p>" } } }
+        });
+      }
+      return jsonResponse({
+        totalFound: 1,
+        content: [{ id: "777", name: "Data Analyst", location: { fullLocation: "Pune, MH, India", remote: false } }]
+      });
+    });
+
+    const workable = await fetcher.fetchJobs(watch("https://apply.workable.com/exampleco"));
+    assert.deepEqual(workable[0]?.locations, ["Bengaluru, Karnataka, India"]);
+    assert.match(workable[0]?.description ?? "", /2\+ years/);
+
+    const smartRecruiters = await fetcher.fetchJobs(watch("https://jobs.smartrecruiters.com/ExampleCo"));
+    assert.deepEqual(smartRecruiters[0]?.locations, ["Pune, MH, India"]);
+    assert.equal(smartRecruiters[0]?.sourceUrl, "https://jobs.smartrecruiters.com/ExampleCo/777-analyst");
+  });
+
+  it("reads company portals through embedded ATS, JSON-LD and detail pages", async () => {
+    const watch = (careersUrl: string) => ({
+      id: "watch_1",
+      userId: "user_1",
+      profileId: "profile_1",
+      companyName: "PortalCo",
+      careersUrl,
+      checkCadenceDays: 1,
+      isActive: true,
+      createdAt: new Date("2026-10-09T00:00:00.000Z")
+    });
+    const jobPosting = {
+      "@context": "https://schema.org",
+      "@type": "JobPosting",
+      title: "Structural Engineer",
+      description: "<p>Minimum 3 years of experience in structural design.</p>",
+      url: "https://portal.example/jobs/structural-engineer",
+      jobLocation: { address: { addressLocality: "Mumbai", addressRegion: "MH", addressCountry: "IN" } },
+      employmentType: "FULL_TIME"
+    };
+    const pages: Record<string, string | (() => Response)> = {
+      "https://embedded.example/careers": '<iframe src="https://boards.greenhouse.io/embedco"></iframe>',
+      "https://boards-api.greenhouse.io/v1/boards/embedco/jobs": () =>
+        jsonResponse({ jobs: [{ id: 1, title: "Backend Engineer", absolute_url: "https://boards.greenhouse.io/embedco/jobs/1", location: { name: "Pune, India" } }] }),
+      "https://boards-api.greenhouse.io/v1/boards/embedco/jobs/1": () => jsonResponse({ content: "&lt;p&gt;Build APIs.&lt;/p&gt;" }),
+      "https://ld.example/careers": `<script type="application/ld+json">${JSON.stringify(jobPosting)}</script>`,
+      "https://list.example/careers": '<a href="/jobs/structural-engineer">Structural Engineer</a>',
+      "https://list.example/jobs/structural-engineer": `<html><script type="application/ld+json">${JSON.stringify({ ...jobPosting, url: undefined })}</script></html>`
+    };
+    const fetcher = new PlatformCareerPageFetcher(async (url) => {
+      const page = pages[String(url)];
+      if (page === undefined) return new Response("not found", { status: 404 });
+      return typeof page === "function" ? page() : new Response(page, { status: 200, headers: { "content-type": "text/html" } });
+    });
+
+    const embedded = await fetcher.fetchJobs(watch("https://embedded.example/careers"));
+    assert.equal(embedded[0]?.title, "Backend Engineer");
+    assert.deepEqual(embedded[0]?.locations, ["Pune, India"]);
+
+    const structured = await fetcher.fetchJobs(watch("https://ld.example/careers"));
+    assert.deepEqual(structured[0]?.locations, ["Mumbai, MH, IN"]);
+    assert.match(structured[0]?.description ?? "", /3 years/);
+
+    const listed = await fetcher.fetchJobs(watch("https://list.example/careers"));
+    assert.equal(listed[0]?.sourceUrl, "https://list.example/jobs/structural-engineer");
+    assert.deepEqual(listed[0]?.locations, ["Mumbai, MH, IN"]);
   });
 
   it("fetches Workday jobs through the common CXS endpoint", async () => {

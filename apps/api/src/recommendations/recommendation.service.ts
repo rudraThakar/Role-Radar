@@ -39,7 +39,7 @@ export class RecommendationService {
       (await this.jobStateRepository.findForProfile(userId, profileId)).map((jobState) => [jobState.jobId, jobState.state])
     );
 
-    return jobs
+    const ranked = jobs
       .map((job) => {
         const recommendation: JobRecommendation = {
           job,
@@ -62,6 +62,8 @@ export class RecommendationService {
         ...recommendation,
         job: { ...recommendation.job, description: previewDescription(recommendation.job.description) }
       }));
+
+    return diversifyByCompany(ranked);
   }
 }
 
@@ -85,4 +87,27 @@ export function isStrictProfileMatch(job: CanonicalJob, profile: CareerProfile):
 function previewDescription(description: string): string {
   const normalized = description.replace(/\s+/g, " ").trim();
   return normalized.length <= 600 ? normalized : `${normalized.slice(0, 597).trimEnd()}...`;
+}
+
+const startupLocationBoost = 6;
+const repeatCompanyPenalty = 5;
+
+// Keeps one employer from filling the first page: each additional job from the
+// same company is ranked a little lower, and startups in the user's preferred
+// location get a boost. The reported score itself is not altered.
+export function diversifyByCompany(recommendations: JobRecommendation[]): JobRecommendation[] {
+  const seenPerCompany = new Map<string, number>();
+
+  return recommendations
+    .map((recommendation) => {
+      const company = normalizeText(recommendation.job.companyName);
+      const position = seenPerCompany.get(company) ?? 0;
+      seenPerCompany.set(company, position + 1);
+
+      const locationMatches = Number(recommendation.evidence.locationMatches ?? 0);
+      const boost = recommendation.job.companyStage === "STARTUP" && locationMatches > 0 ? startupLocationBoost : 0;
+      return { recommendation, rank: recommendation.score + boost - position * repeatCompanyPenalty };
+    })
+    .sort((left, right) => right.rank - left.rank || right.recommendation.score - left.recommendation.score)
+    .map(({ recommendation }) => recommendation);
 }

@@ -60,7 +60,7 @@ export interface GlobalDiscoverySummary {
 // Render's free instance has a small memory budget. ATS responses can contain
 // hundreds of full job descriptions, so only a few boards run at once and
 // nothing but counters is retained between postings.
-const sourceConcurrency = 3;
+const sourceConcurrency = 2;
 
 export class ProfileDiscoveryService {
   constructor(

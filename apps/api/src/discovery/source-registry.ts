@@ -1,6 +1,8 @@
 import type { CompanyStage, ProfileDomain } from "@roleradar/domain";
 
-export type DiscoveryProvider = "GREENHOUSE" | "LEVER" | "ASHBY" | "WORKDAY" | "HTML";
+import { verifiedSources } from "./verified-sources.js";
+
+export type DiscoveryProvider = "GREENHOUSE" | "LEVER" | "ASHBY" | "WORKDAY" | "WORKABLE" | "SMARTRECRUITERS" | "EIGHTFOLD" | "ORACLE_HCM" | "HTML";
 
 export interface DiscoverySource {
   id: string;
@@ -340,6 +342,12 @@ const additionalSources: CompactSource[] = [
   ["palantir-lever", "Palantir", "https://jobs.lever.co/palantir", "LEVER", software],
   ["zeta-lever", "Zeta", "https://jobs.lever.co/zeta", "LEVER", software],
 
+  // Large employers on Eightfold / Oracle HCM (their own career sites)
+  ["qualcomm-eightfold", "Qualcomm", "https://careers.qualcomm.com/careers?domain=qualcomm.com&location=India", "EIGHTFOLD", hardware],
+  ["microsoft-eightfold", "Microsoft", "https://apply.careers.microsoft.com/careers?domain=microsoft.com&location=India", "EIGHTFOLD", [...software, "SALES"]],
+  ["micron-eightfold", "Micron Technology", "https://careers.micron.com/careers?domain=micron.com&location=India", "EIGHTFOLD", [...hardware, "MECHANICAL"]],
+  ["ti-oracle-hcm", "Texas Instruments", "https://edbz.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX/jobs", "ORACLE_HCM", hardware],
+
   // Startups: venture-backed, growth-stage, actively hiring
   ["vercel-greenhouse", "Vercel", "https://boards.greenhouse.io/vercel", "GREENHOUSE", software, "STARTUP"],
   ["glean-greenhouse", "Glean", "https://boards.greenhouse.io/gleanwork", "GREENHOUSE", software, "STARTUP"],
@@ -411,6 +419,16 @@ const additionalSources: CompactSource[] = [
   ["wayve-ashby", "Wayve", "https://jobs.ashbyhq.com/wayve", "ASHBY", [...software, ...hardware], "STARTUP"],
   ["wiz-ashby", "Wiz", "https://jobs.ashbyhq.com/wiz", "ASHBY", software, "STARTUP"],
   ["writer-ashby", "Writer", "https://jobs.ashbyhq.com/writer", "ASHBY", software, "STARTUP"],
+  // India-founded or India-heavy startups
+  ["inmobi-greenhouse", "InMobi", "https://boards.greenhouse.io/inmobi", "GREENHOUSE", software, "STARTUP"],
+  ["glance-greenhouse", "Glance", "https://boards.greenhouse.io/glance", "GREENHOUSE", software, "STARTUP"],
+  ["pocketfm-lever", "Pocket FM", "https://jobs.lever.co/pocketfm", "LEVER", [...software, "MARKETING"], "STARTUP"],
+  ["fampay-lever", "FamPay", "https://jobs.lever.co/fampay", "LEVER", [...software, "FINANCE"], "STARTUP"],
+  ["mindtickle-lever", "Mindtickle", "https://jobs.lever.co/mindtickle", "LEVER", software, "STARTUP"],
+  ["vogo-lever", "Vogo", "https://jobs.lever.co/vogo", "LEVER", [...software, "OPERATIONS"], "STARTUP"],
+  ["bounce-ashby", "Bounce", "https://jobs.ashbyhq.com/bounce", "ASHBY", [...software, "OPERATIONS"], "STARTUP"],
+  ["navi-ashby", "Navi", "https://jobs.ashbyhq.com/navi", "ASHBY", [...software, "FINANCE"], "STARTUP"],
+  ["paytm-lever", "Paytm", "https://jobs.lever.co/paytm", "LEVER", [...software, "FINANCE"]],
   ["zapier-ashby", "Zapier", "https://jobs.ashbyhq.com/zapier", "ASHBY", software, "STARTUP"]
 ];
 
@@ -429,6 +447,8 @@ const existingStartupIds = new Set([
   "safe-security-lever",
   "highlevel-lever"
 ]);
+
+additionalSources.push(...verifiedSources);
 
 const knownIds = new Set(defaultDiscoverySources.map((source) => source.id));
 for (const source of defaultDiscoverySources) {

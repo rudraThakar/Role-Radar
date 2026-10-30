@@ -175,7 +175,7 @@ describe("profile discovery service", () => {
     const summary = await service.discoverForProfile(userId, profile.id);
 
     assert.equal(summary.checked, 6);
-    assert.equal(maximumActiveRequests <= 3, true);
+    assert.equal(maximumActiveRequests <= 2, true);
     assert.deepEqual(summary.sources.map((result) => result.sourceId), sources.map((candidate) => candidate.id));
   });
 });
