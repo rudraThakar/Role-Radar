@@ -130,7 +130,7 @@ describe("profile discovery service", () => {
     assert.equal(summary.sources[1]?.stored, 1);
   });
 
-  it("checks sources concurrently without exceeding the connector limit", async () => {
+  it("checks sources sequentially to stay within the worker memory budget", async () => {
     const profileRepository = new InMemoryProfileRepository();
     const jobRepository = new InMemoryJobRepository();
     const userId = "user_1";
@@ -175,7 +175,7 @@ describe("profile discovery service", () => {
     const summary = await service.discoverForProfile(userId, profile.id);
 
     assert.equal(summary.checked, 6);
-    assert.equal(maximumActiveRequests, 4);
+    assert.equal(maximumActiveRequests, 1);
     assert.deepEqual(summary.sources.map((result) => result.sourceId), sources.map((candidate) => candidate.id));
   });
 });

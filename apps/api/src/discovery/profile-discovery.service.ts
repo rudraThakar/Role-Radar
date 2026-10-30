@@ -57,7 +57,9 @@ export interface GlobalDiscoverySummary {
   sources: ProfileDiscoverySourceResult[];
 }
 
-const sourceConcurrency = 4;
+// Render's free instance has a small memory budget. ATS responses can contain
+// hundreds of full job descriptions, so process one board at a time.
+const sourceConcurrency = 1;
 
 export class ProfileDiscoveryService {
   constructor(
@@ -72,8 +74,8 @@ export class ProfileDiscoveryService {
     const profile = await this.profileRepository.findById(userId, profileId);
     if (profile === null) throw new HttpError(404, "Profile not found");
 
-    const globalSummary = await this.discoverAllSources();
-    const matchingJobs = globalSummary.jobs.filter(({ job }) => isProfileMatch(job, profile));
+    const globalSummary = await this.discoverAllSources(profile);
+    const matchingJobs = globalSummary.jobs;
     const matchingIds = new Set(matchingJobs.map(({ job }) => job.id));
 
     return {
@@ -81,7 +83,8 @@ export class ProfileDiscoveryService {
       skippedSources: 0,
       created: matchingJobs.filter((item) => item.created).length,
       updated: matchingJobs.filter((item) => !item.created).length,
-      skippedIneligible: globalSummary.jobs.length - matchingJobs.length,
+      skippedIneligible:
+        globalSummary.sources.reduce((total, source) => total + source.normalized, 0) - matchingJobs.length,
       failed: globalSummary.failed,
       globallyCreated: globalSummary.created,
       globallyUpdated: globalSummary.updated,
@@ -99,7 +102,7 @@ export class ProfileDiscoveryService {
     };
   }
 
-  async discoverAllSources(): Promise<GlobalDiscoverySummary> {
+  async discoverAllSources(profile?: CareerProfile): Promise<GlobalDiscoverySummary> {
     await this.sourceRepository.ensureSources(this.bootstrapSources);
     const sources = await this.sourceRepository.findActive();
     const summary: GlobalDiscoverySummary = {
@@ -113,7 +116,7 @@ export class ProfileDiscoveryService {
 
     for (let offset = 0; offset < sources.length; offset += sourceConcurrency) {
       const outcomes = await Promise.all(
-        sources.slice(offset, offset + sourceConcurrency).map((source) => this.discoverSource(source))
+        sources.slice(offset, offset + sourceConcurrency).map((source) => this.discoverSource(source, profile))
       );
       for (const outcome of outcomes) {
         summary.checked += 1;
@@ -128,7 +131,7 @@ export class ProfileDiscoveryService {
     return summary;
   }
 
-  private async discoverSource(source: DiscoverySource): Promise<SourceDiscoveryOutcome> {
+  private async discoverSource(source: DiscoverySource, profile?: CareerProfile): Promise<SourceDiscoveryOutcome> {
     const startedAt = new Date();
     const result: ProfileDiscoverySourceResult = {
       sourceId: source.id,
@@ -156,7 +159,11 @@ export class ProfileDiscoveryService {
           result.stored += 1;
           if (persisted.created) result.created += 1;
           else result.updated += 1;
-          jobs.push(persisted);
+          // Scheduled scans only need persistence and metrics. Keeping every
+          // full description alive until all sources finish exhausted Render.
+          if (profile !== undefined && isProfileMatch(persisted.job, profile)) {
+            jobs.push(persisted);
+          }
         } catch {
           result.failedPostings += 1;
         }

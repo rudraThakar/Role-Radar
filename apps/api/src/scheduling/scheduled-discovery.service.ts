@@ -1,10 +1,7 @@
-import { buildRecommendation, type CanonicalJob, type CareerProfile } from "@roleradar/domain";
-
 import type { NotificationRepository } from "../notifications/notification.repository.js";
 import type { ProfileRepository } from "../profiles/profile.repository.js";
 import type { ProfileDiscoveryService } from "../discovery/profile-discovery.service.js";
 import type { JobRepository } from "../jobs/job.repository.js";
-import { isStrictProfileMatch } from "../recommendations/recommendation.service.js";
 import type { WatchCheckerService } from "../watch-checker/watch-checker.service.js";
 
 const staleJobWindowMs = 30 * 24 * 60 * 60 * 1000;
@@ -45,10 +42,7 @@ export class ScheduledDiscoveryService {
     for (const { userId, profile } of await this.profileRepository.findAllOwned()) {
       summary.profilesChecked += 1;
       const watchSummary = await this.watchCheckerService.checkDueProfileWatches(userId, profile.id, now);
-      const newGlobalMatches = globalDiscovery.jobs.filter(
-        ({ job, created }) => created && isProfileMatch(job, profile)
-      ).length;
-      const newProfileMatches = watchSummary.created + newGlobalMatches;
+      const newProfileMatches = watchSummary.created;
       summary.created += watchSummary.created;
       summary.updated += watchSummary.updated;
       summary.failed += watchSummary.failed;
@@ -69,15 +63,4 @@ export class ScheduledDiscoveryService {
 
     return summary;
   }
-}
-
-function isProfileMatch(job: CanonicalJob, profile: CareerProfile): boolean {
-  if (profile.excludedCompanies.some((company) => normalizeText(company) === normalizeText(job.companyName))) {
-    return false;
-  }
-  return buildRecommendation(job, profile).eligibility !== "INELIGIBLE" && isStrictProfileMatch(job, profile);
-}
-
-function normalizeText(text: string): string {
-  return text.toLowerCase().replace(/[^a-z0-9+#.]+/g, " ").replace(/\s+/g, " ").trim();
 }

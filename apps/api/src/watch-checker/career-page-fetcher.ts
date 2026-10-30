@@ -10,9 +10,9 @@ const defaultFetchTimeoutMs = 12_000;
 const defaultFetchAttempts = 3;
 const initialRetryDelayMs = 200;
 const workdayPageSize = 20;
-// Workday exposes no board-wide export. A generous bounded loop prevents the
-// previous first-100-jobs blind spot while still protecting scheduled runs.
-const maximumWorkdayPages = 25;
+// Workday responses are enriched with full descriptions. Keep the newest 200
+// postings bounded so one large tenant cannot exhaust a small worker instance.
+const maximumWorkdayPages = 10;
 const workdayDetailConcurrency = 5;
 
 interface CareerPlatformAdapter {

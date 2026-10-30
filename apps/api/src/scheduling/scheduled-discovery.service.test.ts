@@ -140,6 +140,6 @@ describe("scheduled discovery service", () => {
     assert.equal(summary.notificationsCreated, 1);
     assert.equal(summary.expired, 0);
     assert.equal(notifications[0]?.profileId, profile.id);
-    assert.equal(notifications[0]?.jobCount, 2);
+    assert.equal(notifications[0]?.jobCount, 1);
   });
 });
